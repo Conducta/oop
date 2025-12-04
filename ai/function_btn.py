@@ -40,7 +40,6 @@ class KitchenInventoryApp(tk.Tk):
         menu_items = [
             ("Borrowed Items", self.open_borrowed_items),
             ("Return Items", self.open_return_items),
-            ("Borrowers List", self.open_borrowers_list),
             ("Log / History", self.open_logs_history)
         ]
         y_offset = 70
@@ -171,9 +170,6 @@ class KitchenInventoryApp(tk.Tk):
 
     def open_return_items(self):
         self.create_popup("Return Items")
-
-    def open_borrowers_list(self):
-        self.create_popup("Borrowers List")
 
     def open_logs_history(self):
         self.create_popup("Logs / History")
