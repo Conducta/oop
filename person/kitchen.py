@@ -1,4 +1,4 @@
-import tkinter as tk
+import tkinter as tk 
 from tkinter import ttk
 from tkinter import messagebox
 import datetime
@@ -37,8 +37,8 @@ class KitchenInventoryApp(tk.Tk):
         menu_items = [
             ("Borrow Items", self.open_borrowed_items),
             ("Return Items", self.open_return_items),
-            ("Borrowers List", self.open_borrowers_list),
-            ("Log / History", self.open_logs_history    )
+            ("Add Items", self.open_add_items),
+            ("Log / History", self.open_logs_history)
         ]
 
 
@@ -95,9 +95,8 @@ class KitchenInventoryApp(tk.Tk):
             "year & section",
             "Item Borrowed",
             "Quantity",
-            "Date Borrowed",
-            "Date Return"
-)
+            "Date Borrowed"
+        )
         self.tree = ttk.Treeview(
         table_frame,
         columns=columns,
@@ -156,7 +155,7 @@ class KitchenInventoryApp(tk.Tk):
             qty = entries[4].get().strip()
             date_b = entries[5].get().strip()
 
-            if not (name and ys and item and qty and date_b):
+            if not (name and id_no and ys and item and qty and date_b):
                 messagebox.showerror("Error", "All fields are required.")
                 return
             try:
@@ -164,7 +163,7 @@ class KitchenInventoryApp(tk.Tk):
             except ValueError:
                 messagebox.showerror("Error", "Quantity must be an integer.")
                 return
-            self.tree.insert('', tk.END, values=(name, ys, item, qty_int, date_b, ""))
+            self.tree.insert('', tk.END, values=(name, id_no, ys, item, qty_int, date_b, ""))
             pop_up.destroy()
 
         tk.Button(pop_up, text="Submit", command=on_submit).pack(pady=20)
@@ -173,6 +172,7 @@ class KitchenInventoryApp(tk.Tk):
         pop_up.wait_window()
         
     def open_return_items(self):
+
         if not self.tree.get_children():
             messagebox.showwarning("Warning", "No borrowed items to return!")
             return
@@ -182,23 +182,32 @@ class KitchenInventoryApp(tk.Tk):
         pop_up.geometry("500x400")
         pop_up.config(bg="#e5d6cc")
 
-        tk.Label(pop_up, text="Select item to return:", font=("Arial", 14, "bold"), bg="#e5d6cc").pack(pady=10)
+        tk.Label(pop_up, text="Select item to return:", 
+             font=("Arial", 14, "bold"), bg="#e5d6cc").pack(pady=10)
+        
+        columns = ("Name", "Item", "Quantity")
+        ret_tree = ttk.Treeview(pop_up, columns=columns, show="headings", selectmode="browse")
 
-        listbox = tk.Listbox(pop_up, width=60)
-        listbox.pack(pady=10, padx=20, fill="both", expand=True)
+        for col in columns:
+            ret_tree.heading(col, text=col)
+            ret_tree.column(col, anchor="center", width=100)
 
-        for item_id in self.tree.get_children():
-            item = self.tree.item(item_id)["values"]
-            listbox.insert(tk.END, f"{item[0]} borrowed {item[2]} ({item[3]}) on {item[4]}")
+        ret_tree.pack(padx=20, pady=10, fill="both", expand=True)
+
+        for iid in self.tree.get_children():
+            vals = self.tree.item(iid)["values"]
+            name = vals[0]
+            item = vals[3]
+            qty = vals[4]
+            ret_tree.insert("", "end", iid=iid, values=(name, item, qty))
 
         def return_item():
-            selected = listbox.curselection()
-            if not selected:
+            sel = ret_tree.selection()
+            if not sel:
                 messagebox.showerror("Error", "Please select an item to return.")
                 return
-            item_index = selected[0]
-            tree_id = self.tree.get_children()[item_index]
-            self.tree.delete(tree_id)
+            sel_iid = sel[0]
+            self.tree.delete(sel_iid)
             messagebox.showinfo("Returned", "Item returned successfully!")
             pop_up.destroy()
 
@@ -207,8 +216,8 @@ class KitchenInventoryApp(tk.Tk):
         pop_up.grab_set()
         pop_up.wait_window()
 
-    def open_borrowers_list(self):
-        self.create_popup("Borrowers List")
+    def open_add_items(self):
+        self.create_popup("Add Items")
 
     def open_logs_history(self):
         self.create_popup("Logs / History")
