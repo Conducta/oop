@@ -37,7 +37,7 @@ class KitchenInventoryApp(tk.Tk):
         menu_items = [
             ("Borrow Items", self.open_borrowed_items),
             ("Return Items", self.open_return_items),
-            ("Add Items", self.open_add_items),
+            ("Inventory", self.open_ivtry_items),
             ("Log / History", self.open_logs_history)
         ]
 
@@ -49,9 +49,10 @@ class KitchenInventoryApp(tk.Tk):
             btn = tk.Button(
                 self.sidebar,
                 text=text,
-                bg="#8a543f",
+                bg="#be8b76",
                 fg="white",
-                font=("Arial", 12),
+                font=("Arial", 12 ,"bold"),
+                relief="flat",
                 width=15,
                 command=command
             )
@@ -66,6 +67,7 @@ class KitchenInventoryApp(tk.Tk):
             bg="#8a543f",
             fg="white",
             font=("Arial", 12, "bold"),
+            relief="flat",
             width=15,
             height=2,
             command=self.logout
@@ -216,7 +218,7 @@ class KitchenInventoryApp(tk.Tk):
         pop_up.grab_set()
         pop_up.wait_window()
 
-    def open_add_items(self):
+    def open_ivtry_items(self):
         self.create_popup("Add Items")
 
     def open_logs_history(self):
