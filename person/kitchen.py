@@ -1,6 +1,6 @@
 import tkinter as tk 
 from tkinter import ttk
-from tkinter import messagebox, simpledialog
+from tkinter import messagebox
 import datetime
 
 class KitchenInventoryApp(tk.Tk):
@@ -20,8 +20,6 @@ class KitchenInventoryApp(tk.Tk):
         
         self.sidebar_shown = False
 
-        self.inventory_items = []
-
         self.create_sidebar()
 
         self.create_main()
@@ -39,10 +37,8 @@ class KitchenInventoryApp(tk.Tk):
         menu_items = [
             ("Borrow Items", self.open_borrowed_items),
             ("Return Items", self.open_return_items),
-            ("Edit Borrowed Item", self.open_edit_item),
-            ("Inventory", self.open_invtry_items),
-            ("Log / History", self.open_logs_history),
-            ("Generate / Scan QR", self.Qr_user)
+            ("Inventory", self.open_ivtry_items),
+            ("Log / History", self.open_logs_history)
         ]
 
 
@@ -78,7 +74,7 @@ class KitchenInventoryApp(tk.Tk):
         )  
         self.logout_btn.place(relx=0.05, rely=0.98, y=-20, anchor="sw")
 
-#MAIN
+
     def create_main(self):
         self.main_frame = tk.Frame(self, bg="#e5d6cc")
         self.main_frame.place(x=0, y=60, relwidth=1, relheight=1)
@@ -101,9 +97,7 @@ class KitchenInventoryApp(tk.Tk):
             "year & section",
             "Item Borrowed",
             "Quantity",
-            "Date Borrowed",
-            "Date Returned",
-            "Status"
+            "Date Borrowed"
         )
         self.tree = ttk.Treeview(
         table_frame,
@@ -139,11 +133,7 @@ class KitchenInventoryApp(tk.Tk):
                 self.sidebar_shown = not self.sidebar_shown
 
         animate()
-#Borrow
     def open_borrowed_items(self):
-        if not self.inventory_items:
-            messagebox.showerror("Error", "Inventory is empty. Add items first.")
-            return
         pop_up = tk.Toplevel(self)
         pop_up.title("Add Borrowed Item")
         pop_up.geometry("500x500")
@@ -153,21 +143,9 @@ class KitchenInventoryApp(tk.Tk):
         entries = []
         for lbl in labels:
             tk.Label(pop_up, text=lbl, bg="#e5d6cc", anchor="w").pack(pady=5, fill="x", padx=20)
-            if lbl == "Item Borrowed:":
-                item_var = tk.StringVar()
-                combobox = ttk.Combobox(
-                    pop_up,
-                    textvariable=item_var,
-                    state="readonly"
-                )
-                combobox['values'] = [inv['name'] for inv in self.inventory_items]
-                combobox.pack(pady=5, fill="x", padx=20)
-                entries.append(combobox)
-            else:
-                e = tk.Entry(pop_up)
-                e.pack(pady=5, fill="x", padx=20)
-                entries.append(e)
-
+            e = tk.Entry(pop_up)
+            e.pack(pady=5, fill="x", padx=20)
+            entries.append(e)
 
         entries[-1].insert(0, datetime.date.today().isoformat())
 
@@ -175,11 +153,11 @@ class KitchenInventoryApp(tk.Tk):
             name = entries[0].get().strip()
             id_no = entries[1].get().strip()
             ys = entries[2].get().strip()
-            item_name = entries[3].get().strip()
+            item = entries[3].get().strip()
             qty = entries[4].get().strip()
             date_b = entries[5].get().strip()
 
-            if not (name and id_no and ys and item_name and qty and date_b):
+            if not (name and id_no and ys and item and qty and date_b):
                 messagebox.showerror("Error", "All fields are required.")
                 return
             try:
@@ -187,26 +165,16 @@ class KitchenInventoryApp(tk.Tk):
             except ValueError:
                 messagebox.showerror("Error", "Quantity must be an integer.")
                 return
-            
-            for inv in self.inventory_items:
-                if inv['name'] == item_name:
-                    if inv['quantity'] >= qty_int:
-                        inv['quantity'] -= qty_int
-                        self.tree.insert('', tk.END, values=(name, id_no, ys, item_name, qty_int, date_b,"", "Borrowed"))
-                        messagebox.showinfo("Success", f"{item_name} borrowed successfully!")
-                        pop_up.destroy()
-                        return
-                    else:
-                        messagebox.showerror("Error", f"Not enough {item_name} in inventory!")
-                        return
-            
-            messagebox.showerror("Error", f"Not enough {item_name}, in inventory!")
-        tk.Button(pop_up, text="Submit", command=on_submit).pack(pady=20, anchor="se", padx=10)
+            self.tree.insert('', tk.END, values=(name, id_no, ys, item, qty_int, date_b, ""))
+            pop_up.destroy()
+
+        tk.Button(pop_up, text="Submit", command=on_submit).pack(pady=20)
 
         pop_up.grab_set()
         pop_up.wait_window()
-#Return item       
+        
     def open_return_items(self):
+
         if not self.tree.get_children():
             messagebox.showwarning("Warning", "No borrowed items to return!")
             return
@@ -217,7 +185,7 @@ class KitchenInventoryApp(tk.Tk):
         pop_up.config(bg="#e5d6cc")
 
         tk.Label(pop_up, text="Select item to return:", 
-            font=("Arial", 14, "bold"), bg="#e5d6cc").pack(pady=10)
+             font=("Arial", 14, "bold"), bg="#e5d6cc").pack(pady=10)
         
         columns = ("Name", "Item", "Quantity")
         ret_tree = ttk.Treeview(pop_up, columns=columns, show="headings", selectmode="browse")
@@ -231,29 +199,16 @@ class KitchenInventoryApp(tk.Tk):
         for iid in self.tree.get_children():
             vals = self.tree.item(iid)["values"]
             name = vals[0]
-            item_name = vals[3]
+            item = vals[3]
             qty = vals[4]
-            ret_tree.insert("", "end", iid=iid, values=(name, item_name, qty))
+            ret_tree.insert("", "end", iid=iid, values=(name, item, qty))
 
         def return_item():
             sel = ret_tree.selection()
             if not sel:
                 messagebox.showerror("Error", "Please select an item to return.")
                 return
-            sel_iid = sel[0]    
-            vals = self.tree.item(sel_iid)['values']
-            new_vals = list(vals)
-            new_vals[6] = "Returned"
-            new_vals.append(datetime.date.today().isoformat())
-            self.tree.item(sel_iid, values=new_vals)
-            returned_item = vals[3]
-            returned_qty = vals[4]
-
-
-            for inv in self.inventory_items:
-                if inv['name'].lower() == returned_item.lower():
-                    inv['quantity'] += returned_qty
-                    break
+            sel_iid = sel[0]
             self.tree.delete(sel_iid)
             messagebox.showinfo("Returned", "Item returned successfully!")
             pop_up.destroy()
@@ -263,195 +218,15 @@ class KitchenInventoryApp(tk.Tk):
         pop_up.grab_set()
         pop_up.wait_window()
 
-#EDIT_BORROW ITEm
-    def open_edit_item(self):
-        sel = self.tree.selection()
-        if not sel:
-            messagebox.showwarning("Warning", "No borrowed item selected to edit.")
-            return
-        
-        iid = sel[0]
-        vals = list(self.tree.item(iid)["values"])
-        cur_name, cur_id, cur_ys, cur_item, cur_qty, cur_date_b, cur_date_r, cur_status = vals
-
-        pop = tk.Toplevel(self)
-        pop.title("Edit Borrowed Item")
-        pop.geometry("400x400")
-        pop.config(bg="#e5d6cc")
-
-
-        tk.Label(pop, text="Borrower Name:", bg="#e5d6cc").pack(pady=5, padx=20, fill="x")
-        e_name = tk.Entry(pop); e_name.pack(pady=5, padx=20, fill="x"); e_name.insert(0, cur_name)
-
-        tk.Label(pop, text="ID No.:", bg="#e5d6cc").pack(pady=5, padx=20, fill="x")
-        e_id = tk.Entry(pop); e_id.pack(pady=5, padx=20, fill="x"); e_id.insert(0, cur_id)
-
-        tk.Label(pop, text="Year & Section:", bg="#e5d6cc").pack(pady=5, padx=20, fill="x")
-        e_ys = tk.Entry(pop); e_ys.pack(pady=5, padx=20, fill="x"); e_ys.insert(0, cur_ys)
-
-        tk.Label(pop, text="Item Borrowed:", bg="#e5d6cc").pack(pady=5, padx=20, fill="x")
-        item_var = tk.StringVar(value=cur_item)
-        cb_item = ttk.Combobox(pop, textvariable=item_var, state='readonly',
-                            values=[inv['name'] for inv in self.inventory_items])
-        cb_item.pack(pady=5, padx=20, fill="x")
-
-        tk.Label(pop, text="Quantity:", bg="#e5d6cc").pack(pady=5, padx=20, fill="x")
-        e_qty = tk.Entry(pop); e_qty.pack(pady=5, padx=20, fill="x"); e_qty.insert(0, str(cur_qty))
-
-        tk.Label(pop, text="Date Borrowed (YYYY-MM-DD):", bg="#e5d6cc").pack(pady=5, padx=20, fill="x")
-        e_date_b = tk.Entry(pop); e_date_b.pack(pady=5, padx=20, fill="x"); e_date_b.insert(0, cur_date_b)
-
-        tk.Label(pop, text="Date Returned (optional):", bg="#e5d6cc").pack(pady=5, padx=20, fill="x")
-        e_date_r = tk.Entry(pop); e_date_r.pack(pady=5, padx=20, fill="x"); e_date_r.insert(0, cur_date_r if cur_date_r else "")
-
-        tk.Label(pop, text="Status:", bg="#e5d6cc").pack(pady=5, padx=20, fill="x")
-        e_status = tk.Entry(pop); e_status.pack(pady=5, padx=20, fill="x"); e_status.insert(0, cur_status)
-
-        def on_update():
-            new_name = e_name.get().strip()
-            new_id = e_id.get().strip()
-            new_ys = e_ys.get().strip()
-            new_item = cb_item.get().strip()
-            new_qty_s = e_qty.get().strip()
-            new_date_b = e_date_b.get().strip()
-            new_date_r = e_date_r.get().strip()
-            new_status = e_status.get().strip()
-
-            if not (new_name and new_id and new_ys and new_item and new_qty_s and new_date_b and new_status):
-                messagebox.showerror("Error", "All fields (except return date) are required.")
-                return
-            try:
-                new_qty = int(new_qty_s)
-            except ValueError:
-                messagebox.showerror("Error", "Quantity must be integer.")
-                return
-
-
-            for inv in self.inventory_items:
-                if inv['name'] == cur_item:
-                    inv['quantity'] += int(cur_qty)
-                    break
-
-            for inv in self.inventory_items:
-                if inv['name'] == new_item:
-                    if inv['quantity'] >= new_qty:
-                        inv['quantity'] -= new_qty
-                    else:
-                        messagebox.showerror("Error", f"Not enough {new_item} in inventory.")
-                        return
-                    break
-            else:
-                messagebox.showerror("Error", f"Item {new_item} not found in inventory.")
-                return
-
-
-            new_vals = [new_name, new_id, new_ys, new_item, new_qty, new_date_b, new_date_r, new_status]
-            self.tree.item(iid, values=new_vals)
-
-            messagebox.showinfo("Success", "Borrowed item updated.")
-            pop.destroy()
-
-        tk.Button(pop, text="Update", command=on_update).pack(pady=10)
-        pop.grab_set()
-        pop.wait_window()
-
-#inventory      
-    def open_invtry_items(self):
-        inv = tk.Toplevel(self)
-        inv.title("Inventory")
-        inv.geometry("400x350")
-        inv.config(bg="#e5d6cc")
-
-        cols = ("name", "quantity")
-        inv_tree = ttk.Treeview(inv, columns=cols, show="headings", selectmode="browse")
-        inv_tree.heading("name", text="Item Name")
-        inv_tree.heading("quantity", text="Quantity")
-        inv_tree.column("name", anchor="w", width=200)
-        inv_tree.column("quantity", anchor="center", width=100)
-        inv_tree.pack(padx=10, pady=10, fill="both", expand=True)
-
-
-        def refresh_inventory():
-            inv_tree.delete(*inv_tree.get_children())
-            for item in self.inventory_items:
-                inv_tree.insert("", tk.END, values=(item['name'], item['quantity']))
-
-        refresh_inventory()
-
-        btnf = tk.Frame(inv, bg="#e5d6cc")
-        btnf.pack(pady=5)
-
-
-        def add_item():
-            name = simpledialog.askstring("New Inventory Item", "Enter item name:", parent=self)
-            if not name:
-                return
-            qty = simpledialog.askinteger("Quantity", f"Enter quantity for {name}:", minvalue=0, parent=self)
-            if qty is None:
-                return
-            self.inventory_items.append({'name': name, 'quantity': qty})
-            refresh_inventory()
-
-        def edit_item():
-            sel = inv_tree.selection()
-            if not sel:
-                messagebox.showwarning("Warning", "No item selected to edit.")
-                return
-            iid = sel[0]
-            current_name, current_qty = inv_tree.item(iid, "values")
-            current_qty = int(current_qty)
-
-            new_name = simpledialog.askstring("Edit Item", "Enter new name:", initialvalue=current_name, parent=self)
-            if not new_name:
-                return
-            new_qty = simpledialog.askinteger("Quantity", f"Enter new quantity for {new_name}:", initialvalue=current_qty, minvalue=0, parent=self)
-            if new_qty is None:
-                return
-
-            for inv_item in self.inventory_items:
-                if inv_item['name'] == current_name:
-                    inv_item['name'] = new_name
-                    inv_item['quantity'] = new_qty
-                    break
-            refresh_inventory()
-
-        def delete_item():
-            sel = inv_tree.selection()
-            if not sel:
-                messagebox.showwarning("Warning", "No item selected to delete.")
-                return
-            iid = sel[0]
-            item_name = inv_tree.item(iid, "values")[0]
-                
-            confirm = messagebox.askyesno(
-                    "Confirm Delete",
-                    f"Are you sure you want to delete '{item_name}'?"
-                )
-            if not confirm:
-                    return
-            self.inventory_items = [item for item in self.inventory_items if item['name'] != item_name]
-            refresh_inventory()
-
-
-        btn_add = tk.Button(btnf, text="Add", command=add_item)
-        btn_add.grid(row=0, column=0, padx=5)
-        btn_edit = tk.Button(btnf, text="Edit", command=edit_item)
-        btn_edit.grid(row=0, column=1, padx=5)
-        btn_del = tk.Button(btnf, text="Delete", command=delete_item)
-        btn_del.grid(row=0, column=2, padx=5)
-
-        inv.grab_set()
-        inv.wait_window()
+    def open_ivtry_items(self):
+        self.create_popup("Add Items")
 
     def open_logs_history(self):
         self.create_popup("Logs / History")
 
-    def Qr_user(self):
-        self.create_popup("QR")
             
     def  logout(self):
         self.destroy()
 
 app = KitchenInventoryApp()
 app.mainloop()
-
