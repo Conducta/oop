@@ -910,5 +910,6 @@ class KitchenInventoryApp(tk.Tk):
         )
         header.pack(pady=15)
 
+if __name__ == "__main__":
     init_db()
     LoginWindow().mainloop()
