@@ -302,43 +302,41 @@ class KitchenInventoryApp(tk.Tk):
             else:
                 self.add_item_db(returned_item, returned_qty)
             # Add NEW log entry (don’t replace)
-            self.logs.append({
-                'borrower': borrower,
-                'id_no': id_no,
-                'ys': ys,
-                'item': returned_item,
-                'qty': returned_qty,
-                'date_borrowed': date_borrowed,
-                'date_returned': date_returned,
-                'status': status,
-            })
+                    # 1. Save return date in database
             conn = get_db_connection()
             c = conn.cursor()
-            # OLD (missing id_no, year_section):
-            c.execute(
-                "INSERT INTO borrow (user_id, name, item, qty, date_borrow, date_return) VALUES (?, ?, ?, ?, ?, ?)",
-                (0, borrower, returned_item, returned_qty, date_borrowed, date_returned)
-            )
-            # NEW (include id_no and year_section):
-            c.execute(
-                """INSERT INTO borrow
-                (user_id, name, id_no, year_section, item, qty, date_borrow, date_return)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
-                (0, borrower, id_no, ys, returned_item, returned_qty, date_borrowed, date_returned)
-            )
+            c.execute("""
+                UPDATE borrow
+                SET date_return = ?
+                WHERE name = ?
+                AND item = ?
+                AND qty = ?
+                AND date_borrow = ?
+            """, (
+                date_returned,
+                borrower,
+                returned_item,
+                returned_qty,
+                date_borrowed
+            ))
             conn.commit()
             conn.close()
-            # Remove the active log entry from in-memory list so dashboard stays clean.
-            self.logs = [
-                log for log in self.logs
-                if not (
-                    log.get('borrower') == borrower and
-                    log.get('item') == returned_item and
-                    log.get('qty') == returned_qty and
-                    log.get('date_borrowed') == date_borrowed
+
+            # 2. Update the table row (DO NOT DELETE IT)
+            self.tree.item(
+                sel_iid,
+                values=(
+                    borrower,
+                    id_no,
+                    ys,
+                    returned_item,
+                    returned_qty,
+                    date_borrowed,
+                    date_returned,
+                    "Returned"
                 )
-            ]
-            self.tree.delete(sel_iid)
+            )
+
             messagebox.showinfo("Returned", "Item returned successfully!")
             pop_up.destroy()
         tk.Button(pop_up, text="Return Selected Item", command=return_item).pack(pady=10)

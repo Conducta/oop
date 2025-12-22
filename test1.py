@@ -56,7 +56,6 @@ def init_db():
         qty INTEGER NOT NULL DEFAULT 1,
         date_borrow TEXT NOT NULL,
         date_return TEXT NOT NULL,
-        status TEXT DEFAULT 'Borrowed',
         FOREIGN KEY(user_id) REFERENCES users(id)
     )
     ''')
@@ -69,8 +68,6 @@ def init_db():
         c.execute("ALTER TABLE borrow ADD COLUMN year_section TEXT")
     if "qty" not in cols:
         c.execute("ALTER TABLE borrow ADD COLUMN qty INTEGER NOT NULL DEFAULT 1")
-    if "status" not in cols:
-        c.execute("ALTER TABLE borrow ADD COLUMN status TEXT DEFAULT 'Borrowed'")
     conn.commit()
     conn.close()
     if not os.path.exists(QR_FOLDER):
@@ -304,51 +301,41 @@ class KitchenInventoryApp(tk.Tk):
                     break
             else:
                 self.add_item_db(returned_item, returned_qty)
-            # Update existing borrow record
+            # Add NEW log entry (don’t replace)
+                    # 1. Save return date in database
             conn = get_db_connection()
             c = conn.cursor()
-
             c.execute("""
                 UPDATE borrow
-                SET date_return = ?, status = ?
+                SET date_return = ?
                 WHERE name = ?
-                AND id_no = ?
-                AND year_section = ?
                 AND item = ?
                 AND qty = ?
                 AND date_borrow = ?
-                AND (date_return IS NULL OR date_return = '' OR date_return = 'None')
             """, (
                 date_returned,
-                status,
                 borrower,
-                id_no,
-                ys,
                 returned_item,
                 returned_qty,
                 date_borrowed
             ))
-
             conn.commit()
             conn.close()
 
-            # Update the active log entry in-memory instead of removing
-            for log in self.logs:
-                if (
-                    log.get('borrower') == borrower and
-                    log.get('item') == returned_item and
-                    log.get('qty') == returned_qty and
-                    log.get('date_borrowed') == date_borrowed
-                ):
-                    log['date_returned'] = date_returned
-                    log['status'] = status
-                    break
-
-            # Update the tree item
-            self.tree.item(sel_iid, values=(
-                borrower, id_no, ys, returned_item, returned_qty,
-                date_borrowed, date_returned, status
-            ))
+            # 2. Update the table row (DO NOT DELETE IT)
+            self.tree.item(
+                sel_iid,
+                values=(
+                    borrower,
+                    id_no,
+                    ys,
+                    returned_item,
+                    returned_qty,
+                    date_borrowed,
+                    date_returned,
+                    "Returned"
+                )
+            )
 
             messagebox.showinfo("Returned", "Item returned successfully!")
             pop_up.destroy()
@@ -518,12 +505,13 @@ class KitchenInventoryApp(tk.Tk):
             conn = get_db_connection()
             cur = conn.cursor()
             cur.execute("""
-                SELECT id, name, id_no, year_section, item, qty, date_borrow, date_return, status
+                SELECT id, name, id_no, year_section, item, qty, date_borrow, date_return
                 FROM borrow
                 ORDER BY id DESC
             """)
             for row in cur.fetchall():
-                borrow_id, name, id_no, year_section, item, qty, db, dr, st = row
+                borrow_id, name, id_no, year_section, item, qty, db, dr = row
+                status = "Returned" if dr and dr.strip() else "Borrowed"
                 logs_tree.insert(
                     "", tk.END,
                     values=(
@@ -534,7 +522,7 @@ class KitchenInventoryApp(tk.Tk):
                         qty,
                         db,
                         dr if dr and dr.strip() else "",
-                        st or ("Returned" if dr and dr.strip() else "Borrowed")
+                        status
                     ),
                     iid=str(borrow_id)
                 )
@@ -542,7 +530,7 @@ class KitchenInventoryApp(tk.Tk):
         def export_csv():
             conn = get_db_connection()
             cur = conn.cursor()
-            cur.execute("SELECT id, user_id, id_no, year_section, name, item, qty, date_borrow, date_return, status FROM borrow ORDER BY id DESC")
+            cur.execute("SELECT id, user_id, id_no, year_section, name, item, qty, date_borrow, date_return FROM borrow ORDER BY id DESC")
             rows = cur.fetchall()
             conn.close()
             if not rows:
@@ -553,7 +541,7 @@ class KitchenInventoryApp(tk.Tk):
                 return
             with open(filepath, 'w', newline='', encoding='utf-8') as f:
                 writer = csv.writer(f)
-                writer.writerow(["id", "user_id", "name", "id_no", "year_section", "item", "qty", "date_borrow", "date_return", "status"])
+                writer.writerow(["id", "user_id", "name", "id_no", "year_section", "item", "qty", "date_borrow", "date_return"])
                 for r in rows:
                     writer.writerow(r)
             messagebox.showinfo("Export", f"Logs exported to {filepath}")
@@ -620,53 +608,41 @@ class KitchenInventoryApp(tk.Tk):
         if not QR_LIBS_AVAILABLE:
             messagebox.showerror("Missing Libraries", "QR generation libraries not available.\nPlease run:\npip install qrcode pillow")
             return
-
         win = tk.Toplevel(self)
         win.title("Generate QR Code")
         win.geometry("380x280")
         win.config(bg="#e5d6cc")
-
         tk.Label(win, text="Full Name:", bg="#e5d6cc").pack(pady=5)
         entry_name = tk.Entry(win)
         entry_name.pack(fill="x", padx=20)
-
         tk.Label(win, text="School Year:", bg="#e5d6cc").pack(pady=5)
         entry_sy = tk.Entry(win)
         entry_sy.pack(fill="x", padx=20)
-
         tk.Label(win, text="Department:", bg="#e5d6cc").pack(pady=5)
         entry_dept = tk.Entry(win)
         entry_dept.pack(fill="x", padx=20)
-
         def save_and_generate():
             name = entry_name.get().strip()
             sy = entry_sy.get().strip()
             dept = entry_dept.get().strip()
-
             if not name or not sy or not dept:
                 messagebox.showerror("Error", "All fields required")
                 return
-
             conn = get_db_connection()
             c = conn.cursor()
-            c.execute(
-                "INSERT INTO users (name, school_year, department, qr_path) VALUES (?, ?, ?, ?)",
-                (name, sy, dept, "")
-            )
+            c.execute("INSERT INTO users (name, school_year, department, qr_path) VALUES (?, ?, ?, ?)",
+                      (name, sy, dept, ""))
             conn.commit()
             user_id = c.lastrowid
-
             qr_data = f"{user_id}|{name}|{sy}|{dept}"
             qr_img = qrcode.make(qr_data)
-
             file_path = os.path.join(QR_FOLDER, f"qr_{user_id}.png")
             qr_img.save(file_path)
-
             c.execute("UPDATE users SET qr_path=? WHERE id=?", (file_path, user_id))
             conn.commit()
             conn.close()
 
-            # Show QR code popup (like your old code)
+            # Show QR code popup immediately (like your old code)
             qr_win = tk.Toplevel(self)
             qr_win.title("Generated QR Code")
             qr_win.geometry("320x380")
@@ -691,85 +667,123 @@ class KitchenInventoryApp(tk.Tk):
             win.destroy()
 
         tk.Button(win, text="Generate", command=save_and_generate).pack(pady=20)
-
         win.grab_set()
         win.wait_window()
 
     def scan_qr(self):
         if not QR_LIBS_AVAILABLE:
-            messagebox.showerror("Missing Libraries", "Run:\npip install opencv-python pyzbar pillow")
+            messagebox.showerror("Missing Libraries", "QR scanning libraries not available.\nPlease run:\npip install opencv-python pyzbar pillow")
             return
-
         cap = cv2.VideoCapture(0)
         if not cap.isOpened():
             messagebox.showerror("Camera Error", "Cannot open webcam.")
             return
-
         found = False
         user_info = None
-
-        messagebox.showinfo(
-            "Scan QR",
-            "Camera will open.\nHold QR code to camera.\nPress ESC to cancel."
-        )
-
+        messagebox.showinfo("Scan QR", "Camera will open. Hold QR code to camera. Press ESC to cancel.")
         while True:
             ret, frame = cap.read()
             if not ret:
                 break
-
-            gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-            decoded = decode(gray)
-
+            decoded = decode(frame)
             for d in decoded:
-                qr_value = d.data.decode("utf-8")
+                qr_value = d.data.decode('utf-8')
                 parts = qr_value.split("|")
-
-                if len(parts) < 4:
-                    continue
-
-                try:
-                    user_id = int(parts[0])
-                except ValueError:
-                    continue
-
-                conn = get_db_connection()
-                c = conn.cursor()
-                c.execute(
-                    "SELECT id, name, school_year, department FROM users WHERE id=?",
-                    (user_id,)
-                )
-                row = c.fetchone()
-                conn.close()
-
-                if row:
-                    user_info = {
-                        "id": row[0],
-                        "name": row[1],
-                        "school_year": row[2],
-                        "department": row[3]
-                    }
-                    found = True
-                    break
-
-            cv2.imshow("Scan QR - Press ESC to cancel", frame)
-
-            if found or cv2.waitKey(1) == 27:
+                if len(parts) >= 4:
+                    try:
+                        user_id = int(parts[0])
+                    except ValueError:
+                        continue
+                    conn = get_db_connection()
+                    c = conn.cursor()
+                    c.execute("SELECT id, name, school_year, department FROM users WHERE id=?", (user_id,))
+                    row = c.fetchone()
+                    conn.close()
+                    if row:
+                        found = True
+                        user_info = {'id': row[0], 'name': row[1], 'school_year': row[2], 'department': row[3]}
+                        break
+            cv2.imshow("Scan QR - press ESC to cancel", frame)
+            key = cv2.waitKey(1)
+            if found:
                 break
-
+            if key == 27:
+                break
         cap.release()
         cv2.destroyAllWindows()
-
         if not found:
-            messagebox.showerror("Not Found", "QR not recognized or scan cancelled.")
+            messagebox.showerror("Not Found", "QR not found in database or scan cancelled.")
             return
+        self.open_borrow_window_for_scanned_user(user_info)
 
-        messagebox.showinfo(
-            "QR Detected",
-            f"Name: {user_info['name']}\n"
-            f"Year: {user_info['school_year']}\n"
-            f"Dept: {user_info['department']}"
-        )
+    def open_borrow_window_for_scanned_user(self, user_info):
+        win = tk.Toplevel(self)
+        win.title("Borrow Item (QR Verified)")
+        win.geometry("500x450")
+        win.config(bg="#e5d6cc")
+        tk.Label(win, text=f"Name: {user_info['name']}", bg="#e5d6cc", anchor="w").pack(fill="x", padx=20, pady=(15,5))
+        tk.Label(win, text=f"School Year: {user_info['school_year']}", bg="#e5d6cc", anchor="w").pack(fill="x", padx=20)
+        tk.Label(win, text=f"Department: {user_info['department']}", bg="#e5d6cc", anchor="w").pack(fill="x", padx=20, pady=(0,10))
+        tk.Label(win, text="Item to Borrow:", bg="#e5d6cc").pack(pady=5)
+        item_var = tk.StringVar()
+        item_cb = ttk.Combobox(win, textvariable=item_var, state="readonly")
+        item_cb['values'] = [inv['name'] for inv in self.inventory_items] if self.inventory_items else []
+        item_cb.pack(fill="x", padx=20)
+        tk.Label(win, text="Quantity:", bg="#e5d6cc").pack(pady=5)
+        qty_var = tk.IntVar(value=1)
+        qty_spin = tk.Spinbox(win, from_=1, to=100, width=8, textvariable=qty_var)
+        qty_spin.pack(pady=5)
+        tk.Label(win, text="Date Borrow (YYYY-MM-DD):", bg="#e5d6cc").pack(pady=5)
+        entry_db = tk.Entry(win)
+        entry_db.pack(fill="x", padx=20)
+        entry_db.insert(0, datetime.date.today().isoformat())
+        tk.Label(win, text="Return Date (YYYY-MM-DD):", bg="#e5d6cc").pack(pady=5)
+        entry_dr = tk.Entry(win)
+        entry_dr.pack(fill="x", padx=20)
+        def save_borrow():
+            item_name = item_var.get().strip()
+            try:
+                qty = int(qty_var.get())
+            except Exception:
+                messagebox.showerror("Error", "Quantity must be a number.")
+                return
+            if qty < 1:
+                messagebox.showerror("Error", "Quantity must be at least 1.")
+                return
+            db = entry_db.get().strip()
+            dr = ""
+            entry_dr.delete(0, tk.END)
+            entry_dr.insert(0, dr)
+            if not item_name or not db:
+                messagebox.showerror("Error", "Please fill all required fields.")
+                return
+            for inv in self.inventory_items:
+                if inv['name'] == item_name:
+                    if inv['quantity'] >= qty:
+                        inv['quantity'] -= qty
+                        self.update_item_db(inv['id'], inv['name'], inv['quantity'])
+                        self.save_borrow_db(user_info['id'], user_info['name'], "", user_info['school_year'], item_name, qty, db, dr)
+                        self.logs.append({
+                            'user_id': user_info['id'],
+                            'borrower': user_info['name'],
+                            'id_no': '',
+                            'ys': user_info['school_year'],
+                            'item': item_name,
+                            'qty': qty,
+                            'date_borrowed': db,
+                            'date_returned': "",
+                            'status': 'Borrowed'
+                        })
+                        self.tree.insert('', tk.END, values=(user_info['name'], "", user_info['school_year'], item_name, qty, db, "", "Borrowed"))
+                        messagebox.showinfo("Saved", "Borrow record saved.")
+                        win.destroy()
+                        return
+                    else:
+                        messagebox.showerror("Error", f"Not enough quantity. Available: {inv['quantity']}")
+                        return
+        tk.Button(win, text="Save Borrow", command=save_borrow).pack(pady=15)
+        win.grab_set()
+        win.wait_window()
 
     def load_items_from_db(self):
         self.inventory_items.clear()
@@ -786,9 +800,17 @@ class KitchenInventoryApp(tk.Tk):
         conn = get_db_connection()
         c = conn.cursor()
         c.execute("""
-            SELECT b.user_id, b.name, b.id_no, b.year_section, b.item, b.qty, b.date_borrow, b.date_return, b.status
+            SELECT b.user_id, b.name, b.id_no, b.year_section, b.item, b.qty, b.date_borrow, b.date_return
             FROM borrow b
-            WHERE b.status = 'Borrowed'
+            WHERE (b.date_return = '' OR b.date_return IS NULL OR b.date_return = 'None')
+            AND NOT EXISTS (
+                SELECT 1 FROM borrow r
+                WHERE r.name = b.name
+                    AND r.item = b.item
+                    AND r.qty = b.qty
+                    AND r.date_borrow = b.date_borrow
+                    AND r.date_return != '' AND r.date_return IS NOT NULL AND r.date_return != 'None'
+            )
             ORDER BY b.id DESC
         """)
         rows = c.fetchall()
@@ -802,7 +824,7 @@ class KitchenInventoryApp(tk.Tk):
                 'qty': r[5],
                 'date_borrowed': r[6],
                 'date_returned': r[7],
-                'status': r[8] or 'Borrowed'
+                'status': 'Borrowed'
             })
         conn.close()
 
@@ -839,8 +861,8 @@ class KitchenInventoryApp(tk.Tk):
         conn = get_db_connection()
         c = conn.cursor()
         c.execute(
-            "INSERT INTO borrow (user_id, name, id_no, year_section, item, qty, date_borrow, date_return, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            (user_id, name, id_no or "", year_section or "", item, qty, date_borrow, date_return, 'Borrowed')
+            "INSERT INTO borrow (user_id, name, id_no, year_section, item, qty, date_borrow, date_return) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            (user_id, name, id_no or "", year_section or "", item, qty, date_borrow, date_return)
         )
         conn.commit()
         conn.close()
