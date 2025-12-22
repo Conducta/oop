@@ -189,7 +189,7 @@ class KitchenInventoryApp(tk.Tk):
                 self.sidebar_shown = not self.sidebar_shown
         animate()
 
-    def open_borrowed_items(self):
+    def open_borrowed_items(self, user_info=None):
         if not self.inventory_items:
             messagebox.showerror("Error", "Inventory is empty. Add items first.")
             return
@@ -215,6 +215,10 @@ class KitchenInventoryApp(tk.Tk):
                 e.config(font=("Arial", 12))
                 entries.append(e)
         entries[-1].insert(0, datetime.date.today().isoformat())
+        if user_info:
+            entries[0].insert(0, user_info["name"])
+            entries[2].insert(0, user_info["school_year"])
+
         frame.columnconfigure(1, weight=1)
         tk.Button(pop_up, text="Submit", command=lambda: on_submit(), width=20).pack(pady=20, anchor="e", padx=10)
         def on_submit():
@@ -776,6 +780,8 @@ class KitchenInventoryApp(tk.Tk):
             f"Year: {user_info['school_year']}\n"
             f"Dept: {user_info['department']}"
         )
+
+        self.open_borrowed_items(user_info)
 
     # ... (rest of your methods: load_items_from_db, load_borrow_logs_from_db, etc. remain unchanged)
     def load_items_from_db(self):
