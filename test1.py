@@ -618,10 +618,7 @@ class KitchenInventoryApp(tk.Tk):
 
     def open_generate_qr_window(self):
         if not QR_LIBS_AVAILABLE:
-            messagebox.showerror(
-                "Missing Libraries",
-                "QR generation libraries not available.\nPlease run:\npip install qrcode pillow"
-            )
+            messagebox.showerror("Missing Libraries", "QR generation libraries not available.\nPlease run:\npip install qrcode pillow")
             return
 
         win = tk.Toplevel(self)
@@ -669,7 +666,7 @@ class KitchenInventoryApp(tk.Tk):
             conn.commit()
             conn.close()
 
-            # Show the generated QR code immediately
+            # Show QR code popup (like your old code)
             qr_win = tk.Toplevel(self)
             qr_win.title("Generated QR Code")
             qr_win.geometry("320x380")
@@ -680,7 +677,7 @@ class KitchenInventoryApp(tk.Tk):
             qr_photo = ImageTk.PhotoImage(img)
 
             qr_label = tk.Label(qr_win, image=qr_photo, bg="#e5d6cc")
-            qr_label.image = qr_photo  # Keep reference to avoid garbage collection
+            qr_label.image = qr_photo  # Keep reference
             qr_label.pack(pady=10)
 
             tk.Label(qr_win, text=name, bg="#e5d6cc",
@@ -700,10 +697,7 @@ class KitchenInventoryApp(tk.Tk):
 
     def scan_qr(self):
         if not QR_LIBS_AVAILABLE:
-            messagebox.showerror(
-                "Missing Libraries",
-                "Run:\npip install opencv-python pyzbar pillow"
-            )
+            messagebox.showerror("Missing Libraries", "Run:\npip install opencv-python pyzbar pillow")
             return
 
         cap = cv2.VideoCapture(0)
@@ -777,7 +771,6 @@ class KitchenInventoryApp(tk.Tk):
             f"Dept: {user_info['department']}"
         )
 
-    # ... (rest of your methods: load_items_from_db, load_borrow_logs_from_db, etc. remain unchanged)
     def load_items_from_db(self):
         self.inventory_items.clear()
         conn = get_db_connection()
@@ -793,17 +786,9 @@ class KitchenInventoryApp(tk.Tk):
         conn = get_db_connection()
         c = conn.cursor()
         c.execute("""
-            SELECT b.user_id, b.name, b.id_no, b.year_section, b.item, b.qty, b.date_borrow, b.date_return
+            SELECT b.user_id, b.name, b.id_no, b.year_section, b.item, b.qty, b.date_borrow, b.date_return, b.status
             FROM borrow b
-            WHERE (b.date_return = '' OR b.date_return IS NULL OR b.date_return = 'None')
-            AND NOT EXISTS (
-                SELECT 1 FROM borrow r
-                WHERE r.name = b.name
-                    AND r.item = b.item
-                    AND r.qty = b.qty
-                    AND r.date_borrow = b.date_borrow
-                    AND r.date_return != '' AND r.date_return IS NOT NULL AND r.date_return != 'None'
-            )
+            WHERE b.status = 'Borrowed'
             ORDER BY b.id DESC
         """)
         rows = c.fetchall()
@@ -817,7 +802,7 @@ class KitchenInventoryApp(tk.Tk):
                 'qty': r[5],
                 'date_borrowed': r[6],
                 'date_returned': r[7],
-                'status': 'Borrowed'
+                'status': r[8] or 'Borrowed'
             })
         conn.close()
 
@@ -854,8 +839,8 @@ class KitchenInventoryApp(tk.Tk):
         conn = get_db_connection()
         c = conn.cursor()
         c.execute(
-            "INSERT INTO borrow (user_id, name, id_no, year_section, item, qty, date_borrow, date_return) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-            (user_id, name, id_no or "", year_section or "", item, qty, date_borrow, date_return)
+            "INSERT INTO borrow (user_id, name, id_no, year_section, item, qty, date_borrow, date_return, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (user_id, name, id_no or "", year_section or "", item, qty, date_borrow, date_return, 'Borrowed')
         )
         conn.commit()
         conn.close()
