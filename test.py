@@ -231,7 +231,12 @@ class KitchenInventoryApp(tk.Tk):
                         borrow_id = c.lastrowid
                         conn.commit()
                         conn.close()
-                        self.tree.insert('', tk.END, values=(name, id_no, ys, item_name, qty_int, date_b, "", "Borrowed"))
+                        self.tree.insert(
+                            '',
+                            tk.END,
+                            iid=str(borrow_id),   # <-- THIS IS THE KEY
+                            values=(name, id_no, ys, item_name, qty_int, date_b, "", "Borrowed")
+                        )
                         self.logs.append({
                             'db_id': borrow_id,
                             'borrower': name,
@@ -301,11 +306,14 @@ class KitchenInventoryApp(tk.Tk):
             # Update DB
             conn = get_db_connection()
             c = conn.cursor()
+            db_id = int(sel_iid)
+
             c.execute("""
                 UPDATE borrow
                 SET date_return = ?
-                WHERE name = ? AND item = ? AND qty = ? AND date_borrow = ?
-            """, (date_returned, borrower, returned_item, returned_qty, date_borrowed))
+                WHERE id = ?
+            """, (date_returned, db_id))
+
             conn.commit()
             conn.close()
 
@@ -333,24 +341,10 @@ class KitchenInventoryApp(tk.Tk):
             messagebox.showwarning("Warning", "No borrowed item selected to edit.")
             return
         iid = sel[0]
+        db_id = int(iid)   # iid IS borrow.id
         vals = list(self.tree.item(iid)["values"])
         cur_name, cur_id_no, cur_ys, cur_item, cur_qty_str, cur_date_b, cur_date_r, cur_status = vals
         cur_qty = int(cur_qty_str)
-
-        # Find log entry with db_id
-        log_entry = next((log for log in self.logs if 
-                          log.get('borrower') == cur_name and
-                          log.get('id_no') == cur_id_no and
-                          log.get('ys') == cur_ys and
-                          log.get('item') == cur_item and
-                          log.get('qty') == cur_qty and
-                          log.get('date_borrowed') == cur_date_b), None)
-
-        if not log_entry or 'db_id' not in log_entry:
-            messagebox.showerror("Error", "Could not find matching log entry.")
-            return
-
-        db_id = log_entry['db_id']
 
         pop = tk.Toplevel(self)
         pop.title("Edit Borrowed Item")
