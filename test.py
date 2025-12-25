@@ -259,6 +259,8 @@ class KitchenInventoryApp(tk.Tk):
         pop_up.wait_window()
 
     def open_return_items(self):
+        self.load_borrow_logs_from_db()
+
         if not self.tree.get_children():
             messagebox.showwarning("Warning", "No borrowed items to return!")
             return
@@ -274,12 +276,14 @@ class KitchenInventoryApp(tk.Tk):
             ret_tree.heading(col, text=col)
             ret_tree.column(col, anchor="center", width=100)
         ret_tree.pack(padx=20, pady=10, fill="both", expand=True)
-        for iid in self.tree.get_children():
-            vals = self.tree.item(iid)["values"]
-            name = vals[0]
-            item_name = vals[3]
-            qty = vals[4]
-            ret_tree.insert("", "end", iid=iid, values=(name, item_name, qty))
+        self.load_borrow_logs_from_db()  # refresh active borrows
+        for log in self.logs:
+            ret_tree.insert(
+                "", "end",
+                iid=str(log['db_id']),
+                values=(log['borrower'], log['item'], log['qty'])
+            )
+
         def return_item():
             sel = ret_tree.selection()
             if not sel:
@@ -328,6 +332,8 @@ class KitchenInventoryApp(tk.Tk):
 
             # Reload logs (only active borrows)
             self.load_borrow_logs_from_db()
+
+            ret_tree.delete(sel_iid)
 
             messagebox.showinfo("Returned", "Item returned successfully!")
             pop_up.destroy()
