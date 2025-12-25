@@ -5,16 +5,6 @@ from tkinter import messagebox, simpledialog, filedialog
 import datetime
 import csv
 import sqlite3
-from tkinter import simpledialog, messagebox
-
-try:
-    import qrcode
-    from PIL import Image, ImageTk
-    import cv2
-    from pyzbar.pyzbar import decode
-    QR_LIBS_AVAILABLE = True
-except Exception:
-    QR_LIBS_AVAILABLE = False
 
 class Student:
     def __init__(self, name, quizzes):
@@ -24,7 +14,6 @@ class Student:
         return sum(self.quizzes) / len(self.quizzes) if self.quizzes else 0
 
 DB_PATH = "kitchet.db"
-QR_FOLDER = "qr_codes"
 
 def init_db():
     conn = sqlite3.connect(DB_PATH)
@@ -34,8 +23,7 @@ def init_db():
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         name TEXT NOT NULL,
         school_year TEXT NOT NULL,
-        department TEXT NOT NULL,
-        qr_path TEXT NOT NULL
+        department TEXT NOT NULL
     )
     ''')
     c.execute('''
@@ -55,11 +43,11 @@ def init_db():
         item TEXT NOT NULL,
         qty INTEGER NOT NULL DEFAULT 1,
         date_borrow TEXT NOT NULL,
-        date_return TEXT NOT NULL,
+        date_return TEXT,
         FOREIGN KEY(user_id) REFERENCES users(id)
     )
     ''')
-    # Migration: ensure qty column exists in borrow table for older databases.
+    # Migration: ensure columns exist
     c.execute("PRAGMA table_info(borrow)")
     cols = [row[1] for row in c.fetchall()]
     if "id_no" not in cols:
@@ -70,8 +58,6 @@ def init_db():
         c.execute("ALTER TABLE borrow ADD COLUMN qty INTEGER NOT NULL DEFAULT 1")
     conn.commit()
     conn.close()
-    if not os.path.exists(QR_FOLDER):
-        os.makedirs(QR_FOLDER)
 
 def get_db_connection():
     return sqlite3.connect(DB_PATH)
@@ -110,7 +96,7 @@ class KitchenInventoryApp(tk.Tk):
         super().__init__()
         init_db()
         self.state('zoomed')
-        self.title("Kitchen Utensin and Monitoring System")
+        self.title("Kitchen Utensil and Monitoring System")
         self.config(bg="#e5d6cc")
         self.resizable(True, True)
         self.sidebar_width = 0
@@ -128,7 +114,7 @@ class KitchenInventoryApp(tk.Tk):
         table_frame = tk.Frame(self.main_frame, bg="#e5d6cc")
         table_frame.pack(fill="both", expand=True, padx=20, pady=10)
         columns = (
-            "Borrower Name", "ID No.", "year & section",
+            "Borrower Name", "ID No.", "Year & Section",
             "Item Borrowed", "Quantity", "Date Borrowed",
             "Date Returned", "Status"
         )
@@ -140,6 +126,7 @@ class KitchenInventoryApp(tk.Tk):
         # Pagination setup
         self.logs_per_page = 15
         self.current_page = 0
+
         def display_page():
             self.tree.delete(*self.tree.get_children())
             start = self.current_page * self.logs_per_page
@@ -155,7 +142,7 @@ class KitchenInventoryApp(tk.Tk):
                     log.get('date_returned') if log.get('date_returned') else "",
                     log.get('status'),
                 ))
-        # Buttons for pagination
+
         btn_frame = tk.Frame(self.main_frame, bg="#e5d6cc")
         btn_frame.pack(pady=5)
         def next_page():
@@ -234,8 +221,19 @@ class KitchenInventoryApp(tk.Tk):
                     if inv['quantity'] >= qty_int:
                         inv['quantity'] -= qty_int
                         self.update_item_db(inv['id'], inv['name'], inv['quantity'])
+                        # Save to DB and get ID
+                        conn = get_db_connection()
+                        c = conn.cursor()
+                        c.execute(
+                            "INSERT INTO borrow (user_id, name, id_no, year_section, item, qty, date_borrow, date_return) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                            (0, name, id_no, ys, item_name, qty_int, date_b, "")
+                        )
+                        borrow_id = c.lastrowid
+                        conn.commit()
+                        conn.close()
                         self.tree.insert('', tk.END, values=(name, id_no, ys, item_name, qty_int, date_b, "", "Borrowed"))
-                        log_entry = {
+                        self.logs.append({
+                            'db_id': borrow_id,
                             'borrower': name,
                             'id_no': id_no,
                             'ys': ys,
@@ -244,16 +242,14 @@ class KitchenInventoryApp(tk.Tk):
                             'date_borrowed': date_b,
                             'date_returned': None,
                             'status': 'Borrowed'
-                        }
-                        self.logs.append(log_entry)
-                        self.save_borrow_db(0, name, id_no, ys, item_name, qty_int, date_b, "")
+                        })
                         messagebox.showinfo("Success", f"{item_name} borrowed successfully!")
                         pop_up.destroy()
                         return
                     else:
                         messagebox.showerror("Error", f"Not enough {item_name} in inventory!")
                         return
-            messagebox.showerror("Error", f"Not enough {item_name} in inventory!")
+            messagebox.showerror("Error", f"Item '{item_name}' not found in inventory!")
         pop_up.grab_set()
         pop_up.wait_window()
 
@@ -293,7 +289,7 @@ class KitchenInventoryApp(tk.Tk):
             returned_qty = int(vals[4])
             date_borrowed = vals[5]
             date_returned = datetime.date.today().isoformat()
-            status = "Returned"
+
             for inv in self.inventory_items:
                 if inv['name'].lower() == returned_item.lower():
                     inv['quantity'] += returned_qty
@@ -301,41 +297,29 @@ class KitchenInventoryApp(tk.Tk):
                     break
             else:
                 self.add_item_db(returned_item, returned_qty)
-            # Add NEW log entry (don’t replace)
-                    # 1. Save return date in database
+
+            # Update DB
             conn = get_db_connection()
             c = conn.cursor()
             c.execute("""
                 UPDATE borrow
                 SET date_return = ?
-                WHERE name = ?
-                AND item = ?
-                AND qty = ?
-                AND date_borrow = ?
-            """, (
-                date_returned,
-                borrower,
-                returned_item,
-                returned_qty,
-                date_borrowed
-            ))
+                WHERE name = ? AND item = ? AND qty = ? AND date_borrow = ?
+            """, (date_returned, borrower, returned_item, returned_qty, date_borrowed))
             conn.commit()
             conn.close()
 
-            # 2. Update the table row (DO NOT DELETE IT)
+            # Update main table row
             self.tree.item(
                 sel_iid,
                 values=(
-                    borrower,
-                    id_no,
-                    ys,
-                    returned_item,
-                    returned_qty,
-                    date_borrowed,
-                    date_returned,
-                    "Returned"
+                    borrower, id_no, ys, returned_item, returned_qty,
+                    date_borrowed, date_returned, "Returned"
                 )
             )
+
+            # Reload logs (only active borrows)
+            self.load_borrow_logs_from_db()
 
             messagebox.showinfo("Returned", "Item returned successfully!")
             pop_up.destroy()
@@ -350,7 +334,24 @@ class KitchenInventoryApp(tk.Tk):
             return
         iid = sel[0]
         vals = list(self.tree.item(iid)["values"])
-        cur_name, cur_id, cur_ys, cur_item, cur_qty, cur_date_b, cur_date_r, cur_status = vals
+        cur_name, cur_id_no, cur_ys, cur_item, cur_qty_str, cur_date_b, cur_date_r, cur_status = vals
+        cur_qty = int(cur_qty_str)
+
+        # Find log entry with db_id
+        log_entry = next((log for log in self.logs if 
+                          log.get('borrower') == cur_name and
+                          log.get('id_no') == cur_id_no and
+                          log.get('ys') == cur_ys and
+                          log.get('item') == cur_item and
+                          log.get('qty') == cur_qty and
+                          log.get('date_borrowed') == cur_date_b), None)
+
+        if not log_entry or 'db_id' not in log_entry:
+            messagebox.showerror("Error", "Could not find matching log entry.")
+            return
+
+        db_id = log_entry['db_id']
+
         pop = tk.Toplevel(self)
         pop.title("Edit Borrowed Item")
         pop.geometry("500x350")
@@ -377,9 +378,9 @@ class KitchenInventoryApp(tk.Tk):
                 e.grid(row=i, column=1, sticky="ew", pady=5, padx=5)
                 e.config(font=("Arial", 12))
                 if lbl_text == "Borrower Name:": e.insert(0, cur_name)
-                elif lbl_text == "ID No.:": e.insert(0, cur_id)
+                elif lbl_text == "ID No.:": e.insert(0, cur_id_no)
                 elif lbl_text == "Year & Section:": e.insert(0, cur_ys)
-                elif lbl_text == "Quantity:": e.insert(0, cur_qty)
+                elif lbl_text == "Quantity:": e.insert(0, cur_qty_str)
                 elif lbl_text == "Date Borrowed (YYYY-MM-DD):": e.insert(0, cur_date_b)
                 elif lbl_text == "Date Returned (optional):": e.insert(0, cur_date_r if cur_date_r else "")
                 elif lbl_text == "Status:": e.insert(0, cur_status)
@@ -387,28 +388,94 @@ class KitchenInventoryApp(tk.Tk):
         frame.columnconfigure(1, weight=1)
         btn_frame = tk.Frame(pop, bg="#e5d6cc")
         btn_frame.pack(fill="x", padx=20, pady=10, anchor="e")
+
         def on_update():
             new_vals = [ent.get() if isinstance(ent, tk.Entry) else ent.get() for ent in entries]
+            new_name = new_vals[0].strip()
+            new_id_no = new_vals[1].strip()
+            new_ys = new_vals[2].strip()
+            new_item = new_vals[3].strip()
+            new_qty_str = new_vals[4].strip()
+            new_date_b = new_vals[5].strip()
+            new_date_r = new_vals[6].strip() if new_vals[6].strip() else ""
+            new_status = new_vals[7].strip()
+
+            try:
+                new_qty = int(new_qty_str)
+            except ValueError:
+                messagebox.showerror("Error", "Quantity must be an integer.")
+                return
+
+            # Adjust inventory for quantity change
+            old_qty = cur_qty
+            qty_diff = new_qty - old_qty
+            inventory_updated = False
+            for inv in self.inventory_items:
+                if inv['name'] == new_item:
+                    if inv['quantity'] >= qty_diff or qty_diff < 0:  # Allow negative diff (return stock)
+                        inv['quantity'] -= qty_diff
+                        self.update_item_db(inv['id'], inv['name'], inv['quantity'])
+                        inventory_updated = True
+                        break
+            if not inventory_updated:
+                messagebox.showerror("Error", f"Cannot update quantity: insufficient stock or item not found.")
+                return
+
+            # Update Treeview
             self.tree.item(iid, values=(
-                new_vals[0], new_vals[1], new_vals[2], new_vals[3],
-                new_vals[4], new_vals[5], new_vals[6], new_vals[7]
+                new_name, new_id_no, new_ys, new_item, new_qty,
+                new_date_b, new_date_r, new_status
             ))
-            messagebox.showinfo("Updated", "Borrowed item updated.")
+
+            # Update database using db_id
+            conn = get_db_connection()
+            c = conn.cursor()
+            c.execute("""
+                UPDATE borrow
+                SET name = ?, id_no = ?, year_section = ?, item = ?, qty = ?,
+                    date_borrow = ?, date_return = ?
+                WHERE id = ?
+            """, (new_name, new_id_no, new_ys, new_item, new_qty, new_date_b, new_date_r, db_id))
+            conn.commit()
+            conn.close()
+
+            # Reload logs
+            self.load_borrow_logs_from_db()
+
+            messagebox.showinfo("Updated", "Borrowed item updated successfully.")
             pop.destroy()
+
         def on_delete():
-            confirm = messagebox.askyesno("Confirm Delete", "Are you sure you want to delete this borrowed item?")
+            confirm = messagebox.askyesno("Confirm Delete", "Delete this borrowed item?")
             if not confirm:
                 return
+
+            # Return quantity to inventory
             for inv in self.inventory_items:
                 if inv['name'] == cur_item:
-                    inv['quantity'] += int(cur_qty)
+                    inv['quantity'] += cur_qty
                     self.update_item_db(inv['id'], inv['name'], inv['quantity'])
                     break
             else:
-                self.add_item_db(cur_item, int(cur_qty))
+                self.add_item_db(cur_item, cur_qty)
+
+            # Delete from DB
+            conn = get_db_connection()
+            c = conn.cursor()
+            c.execute("DELETE FROM borrow WHERE id = ?", (db_id,))
+            conn.commit()
+            conn.close()
+
+            # Remove from main table & logs
             self.tree.delete(iid)
+            self.logs = [log for log in self.logs if log.get('db_id') != db_id]
+
+            # Reload logs
+            self.load_borrow_logs_from_db()
+
             messagebox.showinfo("Deleted", "Borrowed item deleted successfully.")
             pop.destroy()
+
         tk.Button(btn_frame, text="Update", command=on_update, width=15).pack(side="right", padx=5)
         tk.Button(btn_frame, text="Delete", command=on_delete, bg="red", fg="white", width=15).pack(side="right", padx=5)
         pop.grab_set()
@@ -530,7 +597,7 @@ class KitchenInventoryApp(tk.Tk):
         def export_csv():
             conn = get_db_connection()
             cur = conn.cursor()
-            cur.execute("SELECT id, user_id, id_no, year_section, name, item, qty, date_borrow, date_return FROM borrow ORDER BY id DESC")
+            cur.execute("SELECT id, user_id, name, id_no, year_section, item, qty, date_borrow, date_return FROM borrow ORDER BY id DESC")
             rows = cur.fetchall()
             conn.close()
             if not rows:
@@ -545,45 +612,12 @@ class KitchenInventoryApp(tk.Tk):
                 for r in rows:
                     writer.writerow(r)
             messagebox.showinfo("Export", f"Logs exported to {filepath}")
-        def remove_logs():
-            sel = logs_tree.selection()
-            if not sel:
-                messagebox.showwarning("Warning", "No log selected to remove.")
-                return
-            confirm = messagebox.askyesno("Confirm Delete", f"Are you sure you want to remove {len(sel)} log(s)?")
-            if not confirm:
-                return
-            conn = get_db_connection()
-            c = conn.cursor()
-            for iid in sel:
-                c.execute("DELETE FROM borrow WHERE id=?", (int(iid),))
-                logs_tree.delete(iid)
-            conn.commit()
-            conn.close()
-            messagebox.showinfo("Deleted", "Selected log(s) removed successfully.")
         btnf = tk.Frame(pop, bg="#e5d6cc")
         btnf.pack(pady=5)
         tk.Button(btnf, text="Refresh", command=refresh_logs).grid(row=0, column=0, padx=5)
         tk.Button(btnf, text="Export CSV", command=export_csv).grid(row=0, column=1, padx=5)
-        tk.Button(btnf, text="Remove Selected", command=remove_logs, bg="red", fg="white").grid(row=0, column=2, padx=5)
-        tk.Button(btnf, text="Close", command=pop.destroy).grid(row=0, column=3, padx=5)
+        tk.Button(btnf, text="Close", command=pop.destroy).grid(row=0, column=2, padx=5)
         refresh_logs()
-        pop.grab_set()
-        pop.wait_window()
-
-    def Qr_user(self):
-        pop = tk.Toplevel(self)
-        pop.title("QR - Generate / Scan")
-        pop.geometry("420x160")
-        pop.config(bg="#e5d6cc")
-        frame = tk.Frame(pop, bg="#e5d6cc")
-        frame.pack(fill="both", expand=True, padx=20, pady=20)
-        left = tk.Frame(frame, bg="#e5d6cc")
-        left.pack(side="left", fill="both", expand=True, padx=10)
-        right = tk.Frame(frame, bg="#e5d6cc")
-        right.pack(side="right", fill="both", expand=True, padx=10)
-        tk.Button(left, text="Generate QR", width=18, height=3, command=lambda: [pop.destroy(), self.open_generate_qr_window()]).pack(expand=True)
-        tk.Button(right, text="Scan QR Code", width=18, height=3, command=lambda: [pop.destroy(), self.scan_qr()]).pack(expand=True)
         pop.grab_set()
         pop.wait_window()
 
@@ -594,196 +628,54 @@ class KitchenInventoryApp(tk.Tk):
         self.destroy()
         LoginWindow()
 
-    def create_popup(self, title):
-        pop = tk.Toplevel(self)
-        pop.title(title)
-        pop.geometry("400x200")
-        pop.config(bg="#e5d6cc")
-        tk.Label(pop, text=title, bg="#e5d6cc", font=("Arial", 14, "bold")).pack(pady=20)
-        tk.Button(pop, text="Close", command=pop.destroy).pack(pady=10)
-        pop.grab_set()
-        pop.wait_window()
+    def create_sidebar(self):
+        self.label_dashboard = tk.Label(
+            self.sidebar, text="DASHBOARD", bg="#6b3f2c",
+            fg="white", font=("Arial", 14, "bold")
+        )
+        self.label_dashboard.place(x=20, y=20)
+        menu_items = [
+            ("Borrow Items", self.open_borrowed_items),
+            ("Return Items", self.open_return_items),
+            ("Edit Borrowed Item", self.open_edit_item),
+            ("Inventory", self.open_invtry_items),
+            ("Log / History", self.open_logs_history),
+        ]
+        self.sidebar_button = []
+        y_offset = 70
+        for text, command in menu_items:
+            btn = tk.Button(
+                self.sidebar, text=text, bg="#be8b76", fg="white",
+                font=("Arial", 12, "bold"), relief="flat", width=15,
+                command=command
+            )
+            btn.place(x=20, y=y_offset)
+            self.sidebar_button.append(btn)
+            y_offset += 50
+        self.logout_btn = tk.Button(
+            self.sidebar,
+            text="Log Out",
+            bg="#8a543f",
+            fg="white",
+            font=("Arial", 12, "bold"),
+            relief="flat",
+            width=15,
+            height=2,
+            command=self.logout
+        )
+        self.logout_btn.place(relx=0.05, rely=0.98, y=-20, anchor="sw")
 
-    def open_generate_qr_window(self):
-        if not QR_LIBS_AVAILABLE:
-            messagebox.showerror("Missing Libraries", "QR generation libraries not available.\nPlease run:\npip install qrcode pillow")
-            return
-        win = tk.Toplevel(self)
-        win.title("Generate QR Code")
-        win.geometry("380x280")
-        win.config(bg="#e5d6cc")
-        tk.Label(win, text="Full Name:", bg="#e5d6cc").pack(pady=5)
-        entry_name = tk.Entry(win)
-        entry_name.pack(fill="x", padx=20)
-        tk.Label(win, text="School Year:", bg="#e5d6cc").pack(pady=5)
-        entry_sy = tk.Entry(win)
-        entry_sy.pack(fill="x", padx=20)
-        tk.Label(win, text="Department:", bg="#e5d6cc").pack(pady=5)
-        entry_dept = tk.Entry(win)
-        entry_dept.pack(fill="x", padx=20)
-        def save_and_generate():
-            name = entry_name.get().strip()
-            sy = entry_sy.get().strip()
-            dept = entry_dept.get().strip()
-            if not name or not sy or not dept:
-                messagebox.showerror("Error", "All fields required")
-                return
-            conn = get_db_connection()
-            c = conn.cursor()
-            c.execute("INSERT INTO users (name, school_year, department, qr_path) VALUES (?, ?, ?, ?)",
-                      (name, sy, dept, ""))
-            conn.commit()
-            user_id = c.lastrowid
-            qr_data = f"{user_id}|{name}|{sy}|{dept}"
-            qr_img = qrcode.make(qr_data)
-            file_path = os.path.join(QR_FOLDER, f"qr_{user_id}.png")
-            qr_img.save(file_path)
-            c.execute("UPDATE users SET qr_path=? WHERE id=?", (file_path, user_id))
-            conn.commit()
-            conn.close()
-
-            # Show QR code popup immediately (like your old code)
-            qr_win = tk.Toplevel(self)
-            qr_win.title("Generated QR Code")
-            qr_win.geometry("320x380")
-            qr_win.config(bg="#e5d6cc")
-
-            img = Image.open(file_path)
-            img = img.resize((250, 250))
-            qr_photo = ImageTk.PhotoImage(img)
-
-            qr_label = tk.Label(qr_win, image=qr_photo, bg="#e5d6cc")
-            qr_label.image = qr_photo  # Keep reference
-            qr_label.pack(pady=10)
-
-            tk.Label(qr_win, text=name, bg="#e5d6cc",
-                     font=("Arial", 12, "bold")).pack()
-
-            tk.Label(qr_win, text=f"{sy} | {dept}", bg="#e5d6cc",
-                     font=("Arial", 10)).pack(pady=(0, 10))
-
-            tk.Button(qr_win, text="Close", command=qr_win.destroy).pack(pady=10)
-
-            win.destroy()
-
-        tk.Button(win, text="Generate", command=save_and_generate).pack(pady=20)
-        win.grab_set()
-        win.wait_window()
-
-    def scan_qr(self):
-        if not QR_LIBS_AVAILABLE:
-            messagebox.showerror("Missing Libraries", "QR scanning libraries not available.\nPlease run:\npip install opencv-python pyzbar pillow")
-            return
-        cap = cv2.VideoCapture(0)
-        if not cap.isOpened():
-            messagebox.showerror("Camera Error", "Cannot open webcam.")
-            return
-        found = False
-        user_info = None
-        messagebox.showinfo("Scan QR", "Camera will open. Hold QR code to camera. Press ESC to cancel.")
-        while True:
-            ret, frame = cap.read()
-            if not ret:
-                break
-            decoded = decode(frame)
-            for d in decoded:
-                qr_value = d.data.decode('utf-8')
-                parts = qr_value.split("|")
-                if len(parts) >= 4:
-                    try:
-                        user_id = int(parts[0])
-                    except ValueError:
-                        continue
-                    conn = get_db_connection()
-                    c = conn.cursor()
-                    c.execute("SELECT id, name, school_year, department FROM users WHERE id=?", (user_id,))
-                    row = c.fetchone()
-                    conn.close()
-                    if row:
-                        found = True
-                        user_info = {'id': row[0], 'name': row[1], 'school_year': row[2], 'department': row[3]}
-                        break
-            cv2.imshow("Scan QR - press ESC to cancel", frame)
-            key = cv2.waitKey(1)
-            if found:
-                break
-            if key == 27:
-                break
-        cap.release()
-        cv2.destroyAllWindows()
-        if not found:
-            messagebox.showerror("Not Found", "QR not found in database or scan cancelled.")
-            return
-        self.open_borrow_window_for_scanned_user(user_info)
-
-    def open_borrow_window_for_scanned_user(self, user_info):
-        win = tk.Toplevel(self)
-        win.title("Borrow Item (QR Verified)")
-        win.geometry("500x450")
-        win.config(bg="#e5d6cc")
-        tk.Label(win, text=f"Name: {user_info['name']}", bg="#e5d6cc", anchor="w").pack(fill="x", padx=20, pady=(15,5))
-        tk.Label(win, text=f"School Year: {user_info['school_year']}", bg="#e5d6cc", anchor="w").pack(fill="x", padx=20)
-        tk.Label(win, text=f"Department: {user_info['department']}", bg="#e5d6cc", anchor="w").pack(fill="x", padx=20, pady=(0,10))
-        tk.Label(win, text="Item to Borrow:", bg="#e5d6cc").pack(pady=5)
-        item_var = tk.StringVar()
-        item_cb = ttk.Combobox(win, textvariable=item_var, state="readonly")
-        item_cb['values'] = [inv['name'] for inv in self.inventory_items] if self.inventory_items else []
-        item_cb.pack(fill="x", padx=20)
-        tk.Label(win, text="Quantity:", bg="#e5d6cc").pack(pady=5)
-        qty_var = tk.IntVar(value=1)
-        qty_spin = tk.Spinbox(win, from_=1, to=100, width=8, textvariable=qty_var)
-        qty_spin.pack(pady=5)
-        tk.Label(win, text="Date Borrow (YYYY-MM-DD):", bg="#e5d6cc").pack(pady=5)
-        entry_db = tk.Entry(win)
-        entry_db.pack(fill="x", padx=20)
-        entry_db.insert(0, datetime.date.today().isoformat())
-        tk.Label(win, text="Return Date (YYYY-MM-DD):", bg="#e5d6cc").pack(pady=5)
-        entry_dr = tk.Entry(win)
-        entry_dr.pack(fill="x", padx=20)
-        def save_borrow():
-            item_name = item_var.get().strip()
-            try:
-                qty = int(qty_var.get())
-            except Exception:
-                messagebox.showerror("Error", "Quantity must be a number.")
-                return
-            if qty < 1:
-                messagebox.showerror("Error", "Quantity must be at least 1.")
-                return
-            db = entry_db.get().strip()
-            dr = ""
-            entry_dr.delete(0, tk.END)
-            entry_dr.insert(0, dr)
-            if not item_name or not db:
-                messagebox.showerror("Error", "Please fill all required fields.")
-                return
-            for inv in self.inventory_items:
-                if inv['name'] == item_name:
-                    if inv['quantity'] >= qty:
-                        inv['quantity'] -= qty
-                        self.update_item_db(inv['id'], inv['name'], inv['quantity'])
-                        self.save_borrow_db(user_info['id'], user_info['name'], "", user_info['school_year'], item_name, qty, db, dr)
-                        self.logs.append({
-                            'user_id': user_info['id'],
-                            'borrower': user_info['name'],
-                            'id_no': '',
-                            'ys': user_info['school_year'],
-                            'item': item_name,
-                            'qty': qty,
-                            'date_borrowed': db,
-                            'date_returned': "",
-                            'status': 'Borrowed'
-                        })
-                        self.tree.insert('', tk.END, values=(user_info['name'], "", user_info['school_year'], item_name, qty, db, "", "Borrowed"))
-                        messagebox.showinfo("Saved", "Borrow record saved.")
-                        win.destroy()
-                        return
-                    else:
-                        messagebox.showerror("Error", f"Not enough quantity. Available: {inv['quantity']}")
-                        return
-        tk.Button(win, text="Save Borrow", command=save_borrow).pack(pady=15)
-        win.grab_set()
-        win.wait_window()
+    def create_main(self):
+        self.main_frame = tk.Frame(self, bg="#e5d6cc")
+        self.main_frame.place(x=0, y=60, relwidth=1, relheight=1)
+        header = tk.Label(
+            self.main_frame,
+            text="KITCHEN UTENSIL AND MONITORING SYSTEM",
+            bg="#e5d6cc",
+            fg="#6b3f2c",
+            font=("Arial", 16, "bold")
+        )
+        header.pack(pady=15)
 
     def load_items_from_db(self):
         self.inventory_items.clear()
@@ -800,30 +692,24 @@ class KitchenInventoryApp(tk.Tk):
         conn = get_db_connection()
         c = conn.cursor()
         c.execute("""
-            SELECT b.user_id, b.name, b.id_no, b.year_section, b.item, b.qty, b.date_borrow, b.date_return
-            FROM borrow b
-            WHERE (b.date_return = '' OR b.date_return IS NULL OR b.date_return = 'None')
-            AND NOT EXISTS (
-                SELECT 1 FROM borrow r
-                WHERE r.name = b.name
-                    AND r.item = b.item
-                    AND r.qty = b.qty
-                    AND r.date_borrow = b.date_borrow
-                    AND r.date_return != '' AND r.date_return IS NOT NULL AND r.date_return != 'None'
-            )
-            ORDER BY b.id DESC
+            SELECT id, user_id, name, id_no, year_section, item, qty, date_borrow, date_return
+            FROM borrow
+            WHERE date_return IS NULL OR date_return = ''
+            ORDER BY id DESC
         """)
         rows = c.fetchall()
-        for r in rows:
+        for row in rows:
+            db_id, user_id, name, id_no, ys, item, qty, date_borrow, date_return = row
             self.logs.append({
-                'user_id': r[0],
-                'borrower': r[1],
-                'id_no': r[2] or "",
-                'ys': r[3] or "",
-                'item': r[4],
-                'qty': r[5],
-                'date_borrowed': r[6],
-                'date_returned': r[7],
+                'db_id': db_id,
+                'user_id': user_id,
+                'borrower': name,
+                'id_no': id_no or "",
+                'ys': ys or "",
+                'item': item,
+                'qty': qty,
+                'date_borrowed': date_borrow,
+                'date_returned': date_return,
                 'status': 'Borrowed'
             })
         conn.close()
@@ -866,56 +752,6 @@ class KitchenInventoryApp(tk.Tk):
         )
         conn.commit()
         conn.close()
-
-    def create_sidebar(self):
-        self.label_dashboard = tk.Label(
-            self.sidebar, text="DASHBOARD", bg="#6b3f2c",
-            fg="white", font=("Arial", 14, "bold")
-        )
-        self.label_dashboard.place(x=20, y=20)
-        menu_items = [
-            ("Borrow Items", self.open_borrowed_items),
-            ("Return Items", self.open_return_items),
-            ("Edit Borrowed Item", self.open_edit_item),
-            ("Inventory", self.open_invtry_items),
-            ("Log / History", self.open_logs_history),
-            ("Generate / Scan QR", self.Qr_user)
-        ]
-        self.sidebar_button = []
-        y_offset = 70
-        for text, command in menu_items:
-            btn = tk.Button(
-                self.sidebar, text=text, bg="#be8b76", fg="white",
-                font=("Arial", 12, "bold"), relief="flat", width=15,
-                command=command
-            )
-            btn.place(x=20, y=y_offset)
-            self.sidebar_button.append(btn)
-            y_offset += 50
-        self.logout_btn = tk.Button(
-            self.sidebar,
-            text="Log Out",
-            bg="#8a543f",
-            fg="white",
-            font=("Arial", 12, "bold"),
-            relief="flat",
-            width=15,
-            height=2,
-            command=self.logout
-        )
-        self.logout_btn.place(relx=0.05, rely=0.98, y=-20, anchor="sw")
-
-    def create_main(self):
-        self.main_frame = tk.Frame(self, bg="#e5d6cc")
-        self.main_frame.place(x=0, y=60, relwidth=1, relheight=1)
-        header = tk.Label(
-            self.main_frame,
-            text="KITCHEN UTENSIL AND MONITORING SYSTEM",
-            bg="#e5d6cc",
-            fg="#6b3f2c",
-            font=("Arial", 16, "bold")
-        )
-        header.pack(pady=15)
 
 if __name__ == "__main__":
     init_db()
