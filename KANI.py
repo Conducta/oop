@@ -125,7 +125,7 @@ class KitchenInventoryApp(tk.Tk):
             start = self.current_page * self.logs_per_page
             end = start + self.logs_per_page
             for log in self.logs[start:end]:
-                self.tree.insert('', tk.END, values=(
+                self.tree.insert('', tk.END, iid=str(log.get('db_id')), values=(
                     log.get('borrower'),
                     log.get('id_no'),
                     log.get('ys'),
@@ -172,28 +172,28 @@ class KitchenInventoryApp(tk.Tk):
             return
         pop_up = tk.Toplevel(self)
         pop_up.title("Add Borrowed Item")
-        pop_up.geometry("580x650")
+        pop_up.geometry("580x550")
         pop_up.config(bg="#e5d6cc")
         frame = tk.Frame(pop_up, bg="#e5d6cc")
         frame.pack(padx=40, pady=30, fill="both", expand=True)
-        # Borrower Name
-        tk.Label(frame, text="Borrower Name:", bg="#e5d6cc", anchor="w").grid(row=0, column=0, sticky="w", pady=10)
-        name_entry = tk.Entry(frame, font=("Arial", 12), width=40)
-        name_entry.grid(row=0, column=1, pady=10, sticky="ew")
-        # ID No.
-        tk.Label(frame, text="ID No.:", bg="#e5d6cc", anchor="w").grid(row=1, column=0, sticky="w", pady=10)
-        id_entry = tk.Entry(frame, font=("Arial", 12), width=40)
-        id_entry.grid(row=1, column=1, pady=10, sticky="ew")
         # Department Label
-        tk.Label(frame, text="Department:", bg="#e5d6cc", font=("Arial", 12, "bold"), anchor="w").grid(row=2, column=0, sticky="w", pady=(20, 5))
-        tk.Label(frame, text="BSHM", bg="#e5d6cc", fg="#6b3f2c", font=("Arial", 12, "bold")).grid(row=2, column=1, sticky="w", pady=(20, 5))
+        tk.Label(frame, text="Department:", bg="#e5d6cc", font=("Arial", 12, "bold"), anchor="w").grid(row=0, column=0, sticky="w", pady=(20, 5))
+        tk.Label(frame, text="BSHM", bg="#e5d6cc", fg="#6b3f2c", font=("Arial", 12, "bold")).grid(row=0, column=1, sticky="w", pady=(20, 5))
         # Borrower Type (below Department)
-        tk.Label(frame, text="Borrower Type:", bg="#e5d6cc", font=("Arial", 12, "bold"), anchor="w").grid(row=3, column=0, sticky="w", pady=(5, 15))
+        tk.Label(frame, text="Borrower Type:", bg="#e5d6cc", font=("Arial", 12, "bold"), anchor="w").grid(row=1, column=0, sticky="w", pady=(5, 15))
         type_frame = tk.Frame(frame, bg="#e5d6cc")
-        type_frame.grid(row=3, column=1, sticky="w", pady=(5, 15))
+        type_frame.grid(row=1, column=1, sticky="w", pady=(5, 15))
         borrower_type = tk.StringVar(value="Student")
         tk.Radiobutton(type_frame, text="Student", variable=borrower_type, value="Student", bg="#e5d6cc").pack(side="left", padx=10)
         tk.Radiobutton(type_frame, text="Instructor", variable=borrower_type, value="Instructor", bg="#e5d6cc").pack(side="left", padx=10)
+        # Borrower Name
+        tk.Label(frame, text="Borrower Name:", bg="#e5d6cc", anchor="w").grid(row=2, column=0, sticky="w", pady=10)
+        name_entry = tk.Entry(frame, font=("Arial", 12), width=40)
+        name_entry.grid(row=2, column=1, pady=10, sticky="ew")
+        # ID No.
+        tk.Label(frame, text="ID No.:", bg="#e5d6cc", anchor="w").grid(row=3, column=0, sticky="w", pady=10)
+        id_entry = tk.Entry(frame, font=("Arial", 12), width=40)
+        id_entry.grid(row=3, column=1, pady=10, sticky="ew")
         # Year & Section
         tk.Label(frame, text="Year & Section:", bg="#e5d6cc", anchor="w").grid(row=4, column=0, sticky="w", pady=10)
         ys_entry = tk.Entry(frame, font=("Arial", 12), width=40)
@@ -241,7 +241,7 @@ class KitchenInventoryApp(tk.Tk):
                     return
                 year_section = f"BSHM {section_input}"
             else:
-                year_section = "BSHM"
+                year_section = "Instructor"
             if not date_b:
                 date_b = datetime.date.today().isoformat()
             try:
