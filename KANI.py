@@ -6,13 +6,6 @@ import datetime
 import csv
 import sqlite3
 
-class Student:
-    def __init__(self, name, quizzes):
-        self.name = name
-        self.quizzes = quizzes
-    def compute_average(self):
-        return sum(self.quizzes) / len(self.quizzes) if self.quizzes else 0
-
 DB_PATH = "kitchet.db"
 
 def init_db():
@@ -179,54 +172,95 @@ class KitchenInventoryApp(tk.Tk):
             return
         pop_up = tk.Toplevel(self)
         pop_up.title("Add Borrowed Item")
-        pop_up.geometry("500x300")
+        pop_up.geometry("580x650")
         pop_up.config(bg="#e5d6cc")
-        labels = ["Borrower Name:", "ID No.", "Year & Section:", "Item Borrowed:", "Quantity:", "Date Borrowed (YYYY-MM-DD):"]
-        entries = []
         frame = tk.Frame(pop_up, bg="#e5d6cc")
-        frame.pack(padx=20, pady=20, fill="both", expand=True)
-        for i, lbl_text in enumerate(labels):
-            tk.Label(frame, text=lbl_text, bg="#e5d6cc", anchor="w").grid(row=i, column=0, sticky="w", pady=5, padx=5)
-            if lbl_text == "Item Borrowed:":
-                item_var = tk.StringVar()
-                combobox = ttk.Combobox(frame, textvariable=item_var, state="readonly")
-                combobox['values'] = [inv['name'] for inv in self.inventory_items]
-                combobox.grid(row=i, column=1, sticky="ew", pady=5, padx=5)
-                entries.append(combobox)
-            else:
-                e = tk.Entry(frame)
-                e.grid(row=i, column=1, sticky="ew", pady=5, padx=5)
-                e.config(font=("Arial", 12))
-                entries.append(e)
-        entries[-1].insert(0, datetime.date.today().isoformat())
+        frame.pack(padx=40, pady=30, fill="both", expand=True)
+        # Borrower Name
+        tk.Label(frame, text="Borrower Name:", bg="#e5d6cc", anchor="w").grid(row=0, column=0, sticky="w", pady=10)
+        name_entry = tk.Entry(frame, font=("Arial", 12), width=40)
+        name_entry.grid(row=0, column=1, pady=10, sticky="ew")
+        # ID No.
+        tk.Label(frame, text="ID No.:", bg="#e5d6cc", anchor="w").grid(row=1, column=0, sticky="w", pady=10)
+        id_entry = tk.Entry(frame, font=("Arial", 12), width=40)
+        id_entry.grid(row=1, column=1, pady=10, sticky="ew")
+        # Department Label
+        tk.Label(frame, text="Department:", bg="#e5d6cc", font=("Arial", 12, "bold"), anchor="w").grid(row=2, column=0, sticky="w", pady=(20, 5))
+        tk.Label(frame, text="BSHM", bg="#e5d6cc", fg="#6b3f2c", font=("Arial", 12, "bold")).grid(row=2, column=1, sticky="w", pady=(20, 5))
+        # Borrower Type (below Department)
+        tk.Label(frame, text="Borrower Type:", bg="#e5d6cc", font=("Arial", 12, "bold"), anchor="w").grid(row=3, column=0, sticky="w", pady=(5, 15))
+        type_frame = tk.Frame(frame, bg="#e5d6cc")
+        type_frame.grid(row=3, column=1, sticky="w", pady=(5, 15))
+        borrower_type = tk.StringVar(value="Student")
+        tk.Radiobutton(type_frame, text="Student", variable=borrower_type, value="Student", bg="#e5d6cc").pack(side="left", padx=10)
+        tk.Radiobutton(type_frame, text="Instructor", variable=borrower_type, value="Instructor", bg="#e5d6cc").pack(side="left", padx=10)
+        # Year & Section
+        tk.Label(frame, text="Year & Section:", bg="#e5d6cc", anchor="w").grid(row=4, column=0, sticky="w", pady=10)
+        ys_entry = tk.Entry(frame, font=("Arial", 12), width=40)
+        ys_entry.grid(row=4, column=1, pady=10, sticky="ew")
+        # Item Borrowed
+        tk.Label(frame, text="Item Borrowed:", bg="#e5d6cc", anchor="w").grid(row=5, column=0, sticky="w", pady=10)
+        item_var = tk.StringVar()
+        combobox = ttk.Combobox(frame, textvariable=item_var, state="readonly")
+        combobox['values'] = [inv['name'] for inv in self.inventory_items]
+        combobox.grid(row=5, column=1, sticky="ew", pady=10)
+        # Quantity
+        tk.Label(frame, text="Quantity:", bg="#e5d6cc", anchor="w").grid(row=6, column=0, sticky="w", pady=10)
+        qty_entry = tk.Entry(frame, font=("Arial", 12), width=40)
+        qty_entry.grid(row=6, column=1, pady=10, sticky="ew")
+        # Date Borrowed (optional)
+        tk.Label(frame, text="Date Borrowed (optional):", bg="#e5d6cc", anchor="w").grid(row=7, column=0, sticky="w", pady=10)
+        date_entry = tk.Entry(frame, font=("Arial", 12), width=40)
+        date_entry.insert(0, datetime.date.today().isoformat())
+        date_entry.grid(row=7, column=1, pady=10, sticky="ew")
         frame.columnconfigure(1, weight=1)
-        tk.Button(pop_up, text="Submit", command=lambda: on_submit(), width=20).pack(pady=20, anchor="e", padx=10)
+        # Toggle Year & Section based on borrower type
+        def toggle_ys(*args):
+            if borrower_type.get() == "Student":
+                ys_entry.config(state="normal")
+                ys_entry.delete(0, tk.END)
+            else:
+                ys_entry.config(state="disabled")
+                ys_entry.delete(0, tk.END)
+                ys_entry.insert(0, "BSHM")
+        toggle_ys()
+        borrower_type.trace("w", toggle_ys)
         def on_submit():
-            name = entries[0].get().strip()
-            id_no = entries[1].get().strip()
-            ys = entries[2].get().strip()
-            item_name = entries[3].get().strip()
-            qty = entries[4].get().strip()
-            date_b = entries[5].get().strip()
-            if not (name and id_no and ys and item_name and qty and date_b):
-                messagebox.showerror("Error", "All fields are required.")
+            name = name_entry.get().strip()
+            id_no = id_entry.get().strip()
+            section_input = ys_entry.get().strip()
+            item_name = item_var.get()
+            qty_str = qty_entry.get().strip()
+            date_b = date_entry.get().strip()
+            if not (name and id_no and item_name and qty_str):
+                messagebox.showerror("Error", "Borrower Name, ID No., Item Borrowed, and Quantity are required.")
                 return
+            if borrower_type.get() == "Student":
+                if not section_input:
+                    messagebox.showerror("Error", "Year & Section is required for students.")
+                    return
+                year_section = f"BSHM {section_input}"
+            else:
+                year_section = "BSHM"
+            if not date_b:
+                date_b = datetime.date.today().isoformat()
             try:
-                qty_int = int(qty)
+                qty_int = int(qty_str)
+                if qty_int <= 0:
+                    raise ValueError
             except ValueError:
-                messagebox.showerror("Error", "Quantity must be an integer.")
+                messagebox.showerror("Error", "Quantity must be a positive integer.")
                 return
             for inv in self.inventory_items:
                 if inv['name'] == item_name:
                     if inv['quantity'] >= qty_int:
                         inv['quantity'] -= qty_int
                         self.update_item_db(inv['id'], inv['name'], inv['quantity'])
-                        # Save to DB and get ID
                         conn = get_db_connection()
                         c = conn.cursor()
                         c.execute(
                             "INSERT INTO borrow (user_id, name, id_no, year_section, item, qty, date_borrow, date_return) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-                            (0, name, id_no, ys, item_name, qty_int, date_b, "")
+                            (0, name, id_no, year_section, item_name, qty_int, date_b, "")
                         )
                         borrow_id = c.lastrowid
                         conn.commit()
@@ -234,14 +268,14 @@ class KitchenInventoryApp(tk.Tk):
                         self.tree.insert(
                             '',
                             tk.END,
-                            iid=str(borrow_id),   # <-- THIS IS THE KEY
-                            values=(name, id_no, ys, item_name, qty_int, date_b, "", "Borrowed")
+                            iid=str(borrow_id),
+                            values=(name, id_no, year_section, item_name, qty_int, date_b, "", "Borrowed")
                         )
                         self.logs.append({
                             'db_id': borrow_id,
                             'borrower': name,
                             'id_no': id_no,
-                            'ys': ys,
+                            'ys': year_section,
                             'item': item_name,
                             'qty': qty_int,
                             'date_borrowed': date_b,
@@ -255,12 +289,12 @@ class KitchenInventoryApp(tk.Tk):
                         messagebox.showerror("Error", f"Not enough {item_name} in inventory!")
                         return
             messagebox.showerror("Error", f"Item '{item_name}' not found in inventory!")
+        tk.Button(pop_up, text="Submit", command=on_submit, width=20).pack(pady=30, anchor="e", padx=40)
         pop_up.grab_set()
         pop_up.wait_window()
 
     def open_return_items(self):
         self.load_borrow_logs_from_db()
-
         if not self.tree.get_children():
             messagebox.showwarning("Warning", "No borrowed items to return!")
             return
@@ -347,137 +381,109 @@ class KitchenInventoryApp(tk.Tk):
             messagebox.showwarning("Warning", "No borrowed item selected to edit.")
             return
         iid = sel[0]
-        db_id = int(iid)   # iid IS borrow.id
+        db_id = int(iid)
         vals = list(self.tree.item(iid)["values"])
         cur_name, cur_id_no, cur_ys, cur_item, cur_qty_str, cur_date_b, cur_date_r, cur_status = vals
         cur_qty = int(cur_qty_str)
 
         pop = tk.Toplevel(self)
         pop.title("Edit Borrowed Item")
-        pop.geometry("500x350")
+        pop.geometry("550x450")
         pop.config(bg="#e5d6cc")
+
         frame = tk.Frame(pop, bg="#e5d6cc")
         frame.pack(padx=20, pady=20, fill="both", expand=True)
+
         labels = [
             "Borrower Name:", "ID No.:", "Year & Section:", "Item Borrowed:",
-            "Quantity:", "Date Borrowed (YYYY-MM-DD):", "Date Returned (optional):", "Status:"
+            "Quantity:", "Date Borrowed:", "Date Returned (optional):", "Status:"
         ]
         entries = []
         for i, lbl_text in enumerate(labels):
-            tk.Label(frame, text=lbl_text, bg="#e5d6cc", anchor="w").grid(row=i, column=0, sticky="w", pady=5, padx=5)
+            tk.Label(frame, text=lbl_text, bg="#e5d6cc", anchor="w").grid(row=i, column=0, sticky="w", pady=8, padx=5)
             if lbl_text == "Item Borrowed:":
                 item_var = tk.StringVar(value=cur_item)
                 cb_item = ttk.Combobox(
                     frame, textvariable=item_var, state='readonly',
                     values=[inv['name'] for inv in self.inventory_items]
                 )
-                cb_item.grid(row=i, column=1, sticky="ew", pady=5, padx=5)
+                cb_item.grid(row=i, column=1, sticky="ew", pady=8)
                 entries.append(cb_item)
             else:
-                e = tk.Entry(frame)
-                e.grid(row=i, column=1, sticky="ew", pady=5, padx=5)
-                e.config(font=("Arial", 12))
-                if lbl_text == "Borrower Name:": e.insert(0, cur_name)
-                elif lbl_text == "ID No.:": e.insert(0, cur_id_no)
-                elif lbl_text == "Year & Section:": e.insert(0, cur_ys)
-                elif lbl_text == "Quantity:": e.insert(0, cur_qty_str)
-                elif lbl_text == "Date Borrowed (YYYY-MM-DD):": e.insert(0, cur_date_b)
-                elif lbl_text == "Date Returned (optional):": e.insert(0, cur_date_r if cur_date_r else "")
-                elif lbl_text == "Status:": e.insert(0, cur_status)
+                e = tk.Entry(frame, font=("Arial", 12))
+                e.grid(row=i, column=1, sticky="ew", pady=8)
+                if i == 0: e.insert(0, cur_name)
+                elif i == 1: e.insert(0, cur_id_no)
+                elif i == 2: e.insert(0, cur_ys)
+                elif i == 4: e.insert(0, cur_qty_str)
+                elif i == 5: e.insert(0, cur_date_b)
+                elif i == 6: e.insert(0, cur_date_r or "")
+                elif i == 7: e.insert(0, cur_status)
                 entries.append(e)
         frame.columnconfigure(1, weight=1)
+
         btn_frame = tk.Frame(pop, bg="#e5d6cc")
-        btn_frame.pack(fill="x", padx=20, pady=10, anchor="e")
+        btn_frame.pack(pady=15)
 
         def on_update():
-            new_vals = [ent.get() if isinstance(ent, tk.Entry) else ent.get() for ent in entries]
-            new_name = new_vals[0].strip()
-            new_id_no = new_vals[1].strip()
-            new_ys = new_vals[2].strip()
-            new_item = new_vals[3].strip()
-            new_qty_str = new_vals[4].strip()
-            new_date_b = new_vals[5].strip()
-            new_date_r = new_vals[6].strip() if new_vals[6].strip() else ""
-            new_status = new_vals[7].strip()
+            new_vals = [e.get().strip() if isinstance(e, tk.Entry) else e.get().strip() for e in entries]
+            new_name, new_id_no, new_ys, new_item, new_qty_str, new_date_b, new_date_r, new_status = new_vals
+            new_date_r = new_date_r or ""
 
             try:
                 new_qty = int(new_qty_str)
+                if new_qty <= 0: raise ValueError
             except ValueError:
-                messagebox.showerror("Error", "Quantity must be an integer.")
+                messagebox.showerror("Error", "Invalid quantity.")
                 return
 
-            # Adjust inventory for quantity change
-            old_qty = cur_qty
-            qty_diff = new_qty - old_qty
-            inventory_updated = False
+            qty_diff = new_qty - cur_qty
+            updated = False
             for inv in self.inventory_items:
                 if inv['name'] == new_item:
-                    if inv['quantity'] >= qty_diff or qty_diff < 0:  # Allow negative diff (return stock)
+                    if inv['quantity'] >= qty_diff or qty_diff < 0:
                         inv['quantity'] -= qty_diff
                         self.update_item_db(inv['id'], inv['name'], inv['quantity'])
-                        inventory_updated = True
+                        updated = True
                         break
-            if not inventory_updated:
-                messagebox.showerror("Error", f"Cannot update quantity: insufficient stock or item not found.")
+            if not updated:
+                messagebox.showerror("Error", "Not enough stock.")
                 return
 
-            # Update Treeview
-            self.tree.item(iid, values=(
-                new_name, new_id_no, new_ys, new_item, new_qty,
-                new_date_b, new_date_r, new_status
-            ))
-
-            # Update database using db_id
             conn = get_db_connection()
             c = conn.cursor()
-            c.execute("""
-                UPDATE borrow
-                SET name = ?, id_no = ?, year_section = ?, item = ?, qty = ?,
-                    date_borrow = ?, date_return = ?
-                WHERE id = ?
-            """, (new_name, new_id_no, new_ys, new_item, new_qty, new_date_b, new_date_r, db_id))
+            c.execute("""UPDATE borrow SET name=?, id_no=?, year_section=?, item=?, qty=?, date_borrow=?, date_return=?
+                         WHERE id=?""",
+                      (new_name, new_id_no, new_ys, new_item, new_qty, new_date_b, new_date_r, db_id))
             conn.commit()
             conn.close()
 
-            # Reload logs
+            self.tree.item(iid, values=(new_name, new_id_no, new_ys, new_item, new_qty,
+                                        new_date_b, new_date_r, "Returned" if new_date_r else "Borrowed"))
             self.load_borrow_logs_from_db()
-
-            messagebox.showinfo("Updated", "Borrowed item updated successfully.")
+            messagebox.showinfo("Success", "Record updated.")
             pop.destroy()
 
         def on_delete():
-            confirm = messagebox.askyesno("Confirm Delete", "Delete this borrowed item?")
-            if not confirm:
-                return
+            if messagebox.askyesno("Delete", "Delete this record? Stock will be returned."):
+                for inv in self.inventory_items:
+                    if inv['name'] == cur_item:
+                        inv['quantity'] += cur_qty
+                        self.update_item_db(inv['id'], inv['name'], inv['quantity'])
+                        break
+                conn = get_db_connection()
+                c = conn.cursor()
+                c.execute("DELETE FROM borrow WHERE id=?", (db_id,))
+                conn.commit()
+                conn.close()
+                self.tree.delete(iid)
+                self.load_borrow_logs_from_db()
+                messagebox.showinfo("Deleted", "Record deleted.")
+                pop.destroy()
 
-            # Return quantity to inventory
-            for inv in self.inventory_items:
-                if inv['name'] == cur_item:
-                    inv['quantity'] += cur_qty
-                    self.update_item_db(inv['id'], inv['name'], inv['quantity'])
-                    break
-            else:
-                self.add_item_db(cur_item, cur_qty)
+        tk.Button(btn_frame, text="Update", command=on_update, bg="#6b3f2c", fg="white", width=12).pack(side="right", padx=5)
+        tk.Button(btn_frame, text="Delete", command=on_delete, bg="red", fg="white", width=12).pack(side="right", padx=5)
 
-            # Delete from DB
-            conn = get_db_connection()
-            c = conn.cursor()
-            c.execute("DELETE FROM borrow WHERE id = ?", (db_id,))
-            conn.commit()
-            conn.close()
-
-            # Remove from main table & logs
-            self.tree.delete(iid)
-            self.logs = [log for log in self.logs if log.get('db_id') != db_id]
-
-            # Reload logs
-            self.load_borrow_logs_from_db()
-
-            messagebox.showinfo("Deleted", "Borrowed item deleted successfully.")
-            pop.destroy()
-
-        tk.Button(btn_frame, text="Update", command=on_update, width=15).pack(side="right", padx=5)
-        tk.Button(btn_frame, text="Delete", command=on_delete, bg="red", fg="white", width=15).pack(side="right", padx=5)
         pop.grab_set()
         pop.wait_window()
 
@@ -742,16 +748,6 @@ class KitchenInventoryApp(tk.Tk):
         conn.commit()
         conn.close()
         self.inventory_items = [it for it in self.inventory_items if it['id'] != item_id]
-
-    def save_borrow_db(self, user_id, name, id_no, year_section, item, qty, date_borrow, date_return):
-        conn = get_db_connection()
-        c = conn.cursor()
-        c.execute(
-            "INSERT INTO borrow (user_id, name, id_no, year_section, item, qty, date_borrow, date_return) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-            (user_id, name, id_no or "", year_section or "", item, qty, date_borrow, date_return)
-        )
-        conn.commit()
-        conn.close()
 
 if __name__ == "__main__":
     init_db()

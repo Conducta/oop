@@ -431,7 +431,7 @@ class KitchenInventoryApp(tk.Tk):
             new_vals = [ent.get() if isinstance(ent, tk.Entry) else ent.get() for ent in entries]
             new_name = new_vals[0]
             new_id_no = new_vals[1]
-            new_ys = "HM"  # Always HM
+            new_ys = "Hospitality Management"  # Always Hospitality Management
             new_item = new_vals[3]
             new_qty_str = new_vals[4]
             new_date_b = new_vals[5]
@@ -720,7 +720,7 @@ class KitchenInventoryApp(tk.Tk):
             SELECT id, user_id, name, id_no, year_section, item, qty, date_borrow, date_return
             FROM borrow
             WHERE (date_return = '' OR date_return IS NULL OR date_return = 'None')
-            AND year_section = 'HM'
+            AND year_section = 'Hospitality Management'
             ORDER BY id DESC
         """)
         rows = c.fetchall()
