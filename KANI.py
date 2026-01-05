@@ -7,6 +7,7 @@ import csv
 import sqlite3
 
 DB_PATH = "kitchet.db"
+BORROW_DAYS_LIMIT = 7  # Overdue after 7 days
 
 def init_db():
     conn = sqlite3.connect(DB_PATH)
@@ -35,6 +36,7 @@ def init_db():
         year_section TEXT,
         item TEXT NOT NULL,
         qty INTEGER NOT NULL DEFAULT 1,
+        returned_qty INTEGER DEFAULT 0,
         date_borrow TEXT NOT NULL,
         date_return TEXT,
         FOREIGN KEY(user_id) REFERENCES users(id)
@@ -49,6 +51,8 @@ def init_db():
         c.execute("ALTER TABLE borrow ADD COLUMN year_section TEXT")
     if "qty" not in cols:
         c.execute("ALTER TABLE borrow ADD COLUMN qty INTEGER NOT NULL DEFAULT 1")
+    if "returned_qty" not in cols:
+        c.execute("ALTER TABLE borrow ADD COLUMN returned_qty INTEGER DEFAULT 0")
     conn.commit()
     conn.close()
 
@@ -149,6 +153,7 @@ class KitchenInventoryApp(tk.Tk):
         tk.Button(btn_frame, text="<< Prev", command=prev_page).pack(side="left", padx=10)
         tk.Button(btn_frame, text="Next >>", command=next_page).pack(side="right", padx=10)
         display_page()
+        self.display_page = display_page  # Make it accessible
 
     def toggle_sidebar(self):
         target_width = 200 if not self.sidebar_shown else 0
@@ -259,29 +264,14 @@ class KitchenInventoryApp(tk.Tk):
                         conn = get_db_connection()
                         c = conn.cursor()
                         c.execute(
-                            "INSERT INTO borrow (user_id, name, id_no, year_section, item, qty, date_borrow, date_return) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                            "INSERT INTO borrow (user_id, name, id_no, year_section, item, qty, returned_qty, date_borrow, date_return) VALUES (?, ?, ?, ?, ?, ?, 0, ?, ?)",
                             (0, name, id_no, year_section, item_name, qty_int, date_b, "")
                         )
                         borrow_id = c.lastrowid
                         conn.commit()
                         conn.close()
-                        self.tree.insert(
-                            '',
-                            tk.END,
-                            iid=str(borrow_id),
-                            values=(name, id_no, year_section, item_name, qty_int, date_b, "", "Borrowed")
-                        )
-                        self.logs.append({
-                            'db_id': borrow_id,
-                            'borrower': name,
-                            'id_no': id_no,
-                            'ys': year_section,
-                            'item': item_name,
-                            'qty': qty_int,
-                            'date_borrowed': date_b,
-                            'date_returned': None,
-                            'status': 'Borrowed'
-                        })
+                        self.load_borrow_logs_from_db()
+                        self.display_page()
                         messagebox.showinfo("Success", f"{item_name} borrowed successfully!")
                         pop_up.destroy()
                         return
@@ -295,28 +285,26 @@ class KitchenInventoryApp(tk.Tk):
 
     def open_return_items(self):
         self.load_borrow_logs_from_db()
-        if not self.tree.get_children():
+        active_logs = [log for log in self.logs if log['status'] != "Returned"]
+        if not active_logs:
             messagebox.showwarning("Warning", "No borrowed items to return!")
             return
         pop_up = tk.Toplevel(self)
         pop_up.title("Return Items")
-        pop_up.geometry("500x400")
+        pop_up.geometry("600x500")
         pop_up.config(bg="#e5d6cc")
         tk.Label(pop_up, text="Select item to return:",
                  font=("Arial", 14, "bold"), bg="#e5d6cc").pack(pady=10)
-        columns = ("Name", "Item", "Quantity")
+        columns = ("Name", "Item", "Qty Outstanding")
         ret_tree = ttk.Treeview(pop_up, columns=columns, show="headings", selectmode="browse")
         for col in columns:
             ret_tree.heading(col, text=col)
-            ret_tree.column(col, anchor="center", width=100)
+            ret_tree.column(col, anchor="center", width=180)
         ret_tree.pack(padx=20, pady=10, fill="both", expand=True)
-        self.load_borrow_logs_from_db()  # refresh active borrows
-        for log in self.logs:
-            ret_tree.insert(
-                "", "end",
-                iid=str(log['db_id']),
-                values=(log['borrower'], log['item'], log['qty'])
-            )
+        for log in active_logs:
+            outstanding = log['qty'] - log.get('returned_qty', 0)
+            if outstanding > 0:
+                ret_tree.insert("", "end", iid=str(log['db_id']), values=(log['borrower'], log['item'], outstanding))
 
         def return_item():
             sel = ret_tree.selection()
@@ -324,53 +312,52 @@ class KitchenInventoryApp(tk.Tk):
                 messagebox.showerror("Error", "Please select an item to return.")
                 return
             sel_iid = sel[0]
-            vals = self.tree.item(sel_iid)['values']
-            borrower = vals[0]
-            id_no = vals[1]
-            ys = vals[2]
-            returned_item = vals[3]
-            returned_qty = int(vals[4])
-            date_borrowed = vals[5]
-            date_returned = datetime.date.today().isoformat()
+            db_id = int(sel_iid)
+            log = next((l for l in self.logs if l['db_id'] == db_id), None)
+            if not log:
+                return
+            item_name = log['item']
+            outstanding = log['qty'] - log.get('returned_qty', 0)
 
+            qty_str = simpledialog.askstring("Return Quantity", f"How many {item_name} to return?\n(Outstanding: {outstanding})", initialvalue=str(outstanding))
+            if not qty_str or not qty_str.isdigit():
+                return
+            return_qty = int(qty_str)
+            if return_qty < 1 or return_qty > outstanding:
+                messagebox.showerror("Error", "Invalid quantity.")
+                return
+
+            # Update inventory
             for inv in self.inventory_items:
-                if inv['name'].lower() == returned_item.lower():
-                    inv['quantity'] += returned_qty
+                if inv['name'] == item_name:
+                    inv['quantity'] += return_qty
                     self.update_item_db(inv['id'], inv['name'], inv['quantity'])
                     break
-            else:
-                self.add_item_db(returned_item, returned_qty)
 
-            # Update DB
             conn = get_db_connection()
             c = conn.cursor()
-            db_id = int(sel_iid)
+            new_returned = log.get('returned_qty', 0) + return_qty
+            if new_returned == log['qty']:
+                c.execute("UPDATE borrow SET returned_qty = ?, date_return = ? WHERE id = ?", (new_returned, datetime.date.today().isoformat(), db_id))
+                log['status'] = "Returned"
+                log['date_returned'] = datetime.date.today().isoformat()
+                messagebox.showinfo("Returned", "All items returned successfully!")
+            else:
+                missing = log['qty'] - new_returned
+                c.execute("UPDATE borrow SET returned_qty = ? WHERE id = ?", (new_returned, db_id))
+                log['status'] = f"Missing {missing}"
+                messagebox.showinfo("Partial Return", f"{return_qty} returned. {missing} still missing.")
 
-            c.execute("""
-                UPDATE borrow
-                SET date_return = ?
-                WHERE id = ?
-            """, (date_returned, db_id))
-
+            log['returned_qty'] = new_returned
             conn.commit()
             conn.close()
 
-            # Update main table row
-            self.tree.item(
-                sel_iid,
-                values=(
-                    borrower, id_no, ys, returned_item, returned_qty,
-                    date_borrowed, date_returned, "Returned"
-                )
-            )
-
-            # Reload logs (only active borrows)
             self.load_borrow_logs_from_db()
-
+            self.display_page()
             ret_tree.delete(sel_iid)
+            if not ret_tree.get_children():
+                pop_up.destroy()
 
-            messagebox.showinfo("Returned", "Item returned successfully!")
-            pop_up.destroy()
         tk.Button(pop_up, text="Return Selected Item", command=return_item).pack(pady=10)
         pop_up.grab_set()
         pop_up.wait_window()
@@ -458,9 +445,8 @@ class KitchenInventoryApp(tk.Tk):
             conn.commit()
             conn.close()
 
-            self.tree.item(iid, values=(new_name, new_id_no, new_ys, new_item, new_qty,
-                                        new_date_b, new_date_r, "Returned" if new_date_r else "Borrowed"))
             self.load_borrow_logs_from_db()
+            self.display_page()
             messagebox.showinfo("Success", "Record updated.")
             pop.destroy()
 
@@ -565,26 +551,33 @@ class KitchenInventoryApp(tk.Tk):
     def open_logs_history(self):
         pop = tk.Toplevel(self)
         pop.title("Logs / History")
-        pop.geometry("900x500")
+        pop.geometry("1000x600")
         pop.config(bg="#e5d6cc")
-        cols = ("Borrower", "ID No.", "Year & Section", "Item", "Qty", "Date Borrowed", "Date Returned", "Status")
+        cols = ("Borrower", "ID No.", "Year & Section", "Item", "Qty Borrowed", "Qty Returned", "Date Borrowed", "Date Returned", "Status")
         logs_tree = ttk.Treeview(pop, columns=cols, show="headings", selectmode="extended")
         for c in cols:
             logs_tree.heading(c, text=c)
-            logs_tree.column(c, anchor="center", width=110)
+            logs_tree.column(c, anchor="center", width=120)
         logs_tree.pack(fill="both", expand=True, padx=10, pady=10)
         def refresh_logs():
             logs_tree.delete(*logs_tree.get_children())
             conn = get_db_connection()
             cur = conn.cursor()
             cur.execute("""
-                SELECT id, name, id_no, year_section, item, qty, date_borrow, date_return
+                SELECT name, id_no, year_section, item, qty, returned_qty, date_borrow, date_return
                 FROM borrow
                 ORDER BY id DESC
             """)
+            today = datetime.date.today()
             for row in cur.fetchall():
-                borrow_id, name, id_no, year_section, item, qty, db, dr = row
-                status = "Returned" if dr and dr.strip() else "Borrowed"
+                name, id_no, year_section, item, qty_borrowed, returned_qty, db, dr = row
+                returned_qty = returned_qty or 0
+                missing = qty_borrowed - returned_qty
+                if dr and dr.strip():
+                    status = "Returned" if returned_qty == qty_borrowed else f"Missing {missing}"
+                else:
+                    days_out = (today - datetime.date.fromisoformat(db)).days
+                    status = "Overdue" if days_out > BORROW_DAYS_LIMIT else ("Borrowed" if returned_qty == 0 else f"Missing {missing}")
                 logs_tree.insert(
                     "", tk.END,
                     values=(
@@ -592,18 +585,18 @@ class KitchenInventoryApp(tk.Tk):
                         id_no or "",
                         year_section or "",
                         item,
-                        qty,
+                        qty_borrowed,
+                        returned_qty,
                         db,
                         dr if dr and dr.strip() else "",
                         status
-                    ),
-                    iid=str(borrow_id)
+                    )
                 )
             conn.close()
         def export_csv():
             conn = get_db_connection()
             cur = conn.cursor()
-            cur.execute("SELECT id, user_id, name, id_no, year_section, item, qty, date_borrow, date_return FROM borrow ORDER BY id DESC")
+            cur.execute("SELECT id, user_id, name, id_no, year_section, item, qty, returned_qty, date_borrow, date_return FROM borrow ORDER BY id DESC")
             rows = cur.fetchall()
             conn.close()
             if not rows:
@@ -614,7 +607,7 @@ class KitchenInventoryApp(tk.Tk):
                 return
             with open(filepath, 'w', newline='', encoding='utf-8') as f:
                 writer = csv.writer(f)
-                writer.writerow(["id", "user_id", "name", "id_no", "year_section", "item", "qty", "date_borrow", "date_return"])
+                writer.writerow(["id", "user_id", "name", "id_no", "year_section", "item", "qty", "returned_qty", "date_borrow", "date_return"])
                 for r in rows:
                     writer.writerow(r)
             messagebox.showinfo("Export", f"Logs exported to {filepath}")
@@ -698,14 +691,27 @@ class KitchenInventoryApp(tk.Tk):
         conn = get_db_connection()
         c = conn.cursor()
         c.execute("""
-            SELECT id, user_id, name, id_no, year_section, item, qty, date_borrow, date_return
+            SELECT id, user_id, name, id_no, year_section, item, qty, returned_qty, date_borrow, date_return
             FROM borrow
-            WHERE date_return IS NULL OR date_return = ''
             ORDER BY id DESC
         """)
-        rows = c.fetchall()
-        for row in rows:
-            db_id, user_id, name, id_no, ys, item, qty, date_borrow, date_return = row
+        today = datetime.date.today()
+        for row in c.fetchall():
+            db_id, user_id, name, id_no, ys, item, qty, returned_qty, date_borrow, date_return = row
+            returned_qty = returned_qty or 0
+            missing = qty - returned_qty
+            borrow_date = datetime.date.fromisoformat(date_borrow)
+            days_out = (today - borrow_date).days
+
+            if returned_qty == qty and date_return:
+                status = "Returned"
+            elif returned_qty > 0 and returned_qty < qty:
+                status = f"Missing {missing}"
+            elif days_out > BORROW_DAYS_LIMIT:
+                status = "Overdue"
+            else:
+                status = "Borrowed"
+
             self.logs.append({
                 'db_id': db_id,
                 'user_id': user_id,
@@ -714,9 +720,10 @@ class KitchenInventoryApp(tk.Tk):
                 'ys': ys or "",
                 'item': item,
                 'qty': qty,
+                'returned_qty': returned_qty,
                 'date_borrowed': date_borrow,
                 'date_returned': date_return,
-                'status': 'Borrowed'
+                'status': status
             })
         conn.close()
 
