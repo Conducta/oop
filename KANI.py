@@ -53,6 +53,8 @@ def init_db():
         c.execute("ALTER TABLE borrow ADD COLUMN qty INTEGER NOT NULL DEFAULT 1")
     if "returned_qty" not in cols:
         c.execute("ALTER TABLE borrow ADD COLUMN returned_qty INTEGER DEFAULT 0")
+    if "status" not in cols:
+        c.execute("ALTER TABLE borrow ADD COLUMN status TEXT")
     conn.commit()
     conn.close()
 
@@ -439,9 +441,12 @@ class KitchenInventoryApp(tk.Tk):
 
             conn = get_db_connection()
             c = conn.cursor()
-            c.execute("""UPDATE borrow SET name=?, id_no=?, year_section=?, item=?, qty=?, date_borrow=?, date_return=?
-                         WHERE id=?""",
-                      (new_name, new_id_no, new_ys, new_item, new_qty, new_date_b, new_date_r, db_id))
+            c.execute("""
+                UPDATE borrow
+                SET name=?, id_no=?, year_section=?, item=?, qty=?, date_borrow=?, date_return=?, status=?
+                WHERE id=?
+            """, (new_name, new_id_no, new_ys, new_item, new_qty, new_date_b, new_date_r, new_status, db_id))
+
             conn.commit()
             conn.close()
 
@@ -551,7 +556,7 @@ class KitchenInventoryApp(tk.Tk):
     def open_logs_history(self):
         pop = tk.Toplevel(self)
         pop.title("Logs / History")
-        pop.geometry("1000x600")
+        pop.geometry("1300x600")
         pop.config(bg="#e5d6cc")
         cols = ("Borrower", "ID No.", "Year & Section", "Item", "Qty Borrowed", "Qty Returned", "Date Borrowed", "Date Returned", "Status")
         logs_tree = ttk.Treeview(pop, columns=cols, show="headings", selectmode="extended")
@@ -691,13 +696,13 @@ class KitchenInventoryApp(tk.Tk):
         conn = get_db_connection()
         c = conn.cursor()
         c.execute("""
-            SELECT id, user_id, name, id_no, year_section, item, qty, returned_qty, date_borrow, date_return
+            SELECT id, user_id, name, id_no, year_section, item, qty, returned_qty, date_borrow, date_return, status
             FROM borrow
             ORDER BY id DESC
         """)
         today = datetime.date.today()
         for row in c.fetchall():
-            db_id, user_id, name, id_no, ys, item, qty, returned_qty, date_borrow, date_return = row
+            db_id, user_id, name, id_no, ys, item, qty, returned_qty, date_borrow, date_return, db_status = row
             returned_qty = returned_qty or 0
             missing = qty - returned_qty
             borrow_date = datetime.date.fromisoformat(date_borrow)
@@ -711,6 +716,7 @@ class KitchenInventoryApp(tk.Tk):
                 status = "Overdue"
             else:
                 status = "Borrowed"
+            
 
             self.logs.append({
                 'db_id': db_id,
